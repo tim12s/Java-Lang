@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,9 +19,10 @@ package net.openhft.lang.model;
 import net.openhft.compiler.CompilerUtils;
 import net.openhft.lang.Compare;
 import net.openhft.lang.Maths;
+import net.openhft.lang.MemoryUnit;
 import net.openhft.lang.io.Bytes;
 import net.openhft.lang.io.serialization.BytesMarshallable;
-import org.slf4j.Logger;
+import net.openhft.lang.model.constraints.Group;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
@@ -31,6 +32,9 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static net.openhft.lang.MemoryUnit.BYTES;
+import static net.openhft.lang.model.DataValueModelImpl.heapSize;
+
 public class DataValueGenerator {
     private static final Comparator<Class> COMPARATOR = new Comparator<Class>() {
         @Override
@@ -38,29 +42,96 @@ public class DataValueGenerator {
             return o1.getName().compareTo(o2.getName());
         }
     };
-    private static final Comparator<Map.Entry<String, FieldModel>> COMPARE_BY_HEAP_SIZE = new Comparator<Map.Entry<String, FieldModel>>() {
+    private static final Comparator<Map.Entry<String, FieldModel>> COMPARE_BY_GROUP_THEN_HEAP_SIZE = new Comparator<Map.Entry<String, FieldModel>>() {
         @Override
         public int compare(Map.Entry<String, FieldModel> o1, Map.Entry<String, FieldModel> o2) {
             // descending
-            int cmp = -Maths.compare(o1.getValue().heapSize(), o2.getValue().heapSize());
-            return cmp == 0 ? o1.getKey().compareTo(o2.getKey()) : cmp;
+            FieldModel model1 = o1.getValue();
+            FieldModel model2 = o2.getValue();
+
+            Group group1 = model1.group();
+            Group group2 = model2.group();
+
+            int group = Integer.compare(
+                    group1 == null ? Integer.MIN_VALUE : model1.group().value(),
+                    group2 == null ? Integer.MIN_VALUE : model2.group().value());
+
+            if (group != 0)
+                return group;
+
+            int cmp = -Maths.compare(model1.heapSize(), model2.heapSize());
+            if (cmp != 0)
+                return cmp;
+            Class firstPrimitiveFieldType1 = null;
+            if (!model1.type().isPrimitive() &&
+                    !CharSequence.class.isAssignableFrom(model1.type())) {
+                firstPrimitiveFieldType1 = firstPrimitiveFieldType(model1.type());
+            }
+            Class firstPrimitiveFieldType2 = null;
+            if (!model2.type().isPrimitive() &&
+                    !CharSequence.class.isAssignableFrom(model2.type())) {
+                firstPrimitiveFieldType2 = firstPrimitiveFieldType(model2.type());
+            }
+            if (firstPrimitiveFieldType1 != null && firstPrimitiveFieldType2 == null)
+                return -1;
+            if (firstPrimitiveFieldType1 == null && firstPrimitiveFieldType2 != null)
+                return 1;
+            if (firstPrimitiveFieldType1 != null && firstPrimitiveFieldType2 != null) {
+                return -Maths.compare(heapSize(firstPrimitiveFieldType1),
+                        heapSize(firstPrimitiveFieldType2));
+            }
+            return o1.getKey().compareTo(o2.getKey());
         }
     };
-    private static final Logger LOGGER = LoggerFactory.getLogger(DataValueGenerator.class);
     private final Map<Class, Class> heapClassMap = new ConcurrentHashMap<Class, Class>();
     private final Map<Class, Class> nativeClassMap = new ConcurrentHashMap<Class, Class>();
     private boolean dumpCode = Boolean.getBoolean("dvg.dumpCode");
 
-    private static String bytesType(Class type) {
+    public static Class firstPrimitiveFieldType(Class valueClass) {
+        if (valueClass.getClassLoader() == null)
+            return null;
+        try {
+            DataValueModel valueModel;
+            if (valueClass.isInterface()) {
+                valueModel = DataValueModels.acquireModel(valueClass);
+
+            } else {
+                String valueClassName = valueClass.getName();
+                String $$Native = "$$Native";
+                if (valueClassName.endsWith($$Native)) {
+                    valueClassName = valueClassName.substring(0,
+                            valueClassName.length() - $$Native.length());
+                    valueModel = DataValueModels.acquireModel(Class.forName(valueClassName));
+
+                } else {
+                    return null;
+                }
+            }
+            Map.Entry<String, FieldModel>[] fields =
+                    DataValueGenerator.heapSizeOrderedFieldsGrouped(valueModel);
+            if (fields.length == 0)
+                return null;
+            Class firstFieldType = fields[0].getValue().type();
+            if (firstFieldType.isPrimitive())
+                return firstFieldType;
+            return firstPrimitiveFieldType(firstFieldType);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String bytesType(Class type) {
         if (type.isPrimitive())
             return Character.toUpperCase(type.getName().charAt(0)) + type.getName().substring(1);
         if (CharSequence.class.isAssignableFrom(type))
             return "UTFΔ";
+        if (Enum.class.isAssignableFrom(type))
+            return "Enum";
         return "Object";
     }
 
     static String generateHeapObject(DataValueModel<?> dvmodel) {
-        SortedSet<Class> imported = new TreeSet<Class>(COMPARATOR);
+        SortedSet<Class> imported = newImported();
         imported.add(BytesMarshallable.class);
         imported.add(Bytes.class);
         imported.add(IOException.class);
@@ -72,14 +143,12 @@ public class DataValueGenerator {
         StringBuilder writeMarshal = new StringBuilder();
         StringBuilder readMarshal = new StringBuilder();
         StringBuilder copy = new StringBuilder();
-        Map<String, ? extends FieldModel> fieldMap = dvmodel.fieldMap();
-        Map.Entry<String, FieldModel>[] entries = fieldMap.entrySet().toArray(new Map.Entry[fieldMap.size()]);
-        Arrays.sort(entries, COMPARE_BY_HEAP_SIZE);
+        Map.Entry<String, FieldModel>[] entries = heapSizeOrderedFieldsGrouped(dvmodel);
         for (Map.Entry<String, ? extends FieldModel> entry : entries) {
             String name = entry.getKey();
             FieldModel model = entry.getValue();
             Class type = model.type();
-            if (!type.isPrimitive() && !type.getPackage().getName().equals("java.lang"))
+            if (shouldImport(type))
                 imported.add(type);
             heapFieldDeclarations(fieldDeclarations, type, name, model);
 
@@ -102,10 +171,10 @@ public class DataValueGenerator {
                 getter = volatileGetter;
             }
 
-
             if (setter == null) {
                 if (getter != null)
                     copy.append("        ((Copyable) ").append(getter.getName()).append("()).copyFrom(from.").append(getter.getName()).append("());\n");
+
             } else {
                 methodCopy(copy, getter, setter, model);
                 methodHeapSet(getterSetters, setter, name, type, model);
@@ -129,7 +198,6 @@ public class DataValueGenerator {
                 methodHeapGet(getterSetters, volatileGetter, name, type, model);
                 methodHeapSet(getterSetters, orderedSetter, name, type, model);
             }
-
 
             Method adder = model.adder();
             if (adder != null) {
@@ -192,7 +260,7 @@ public class DataValueGenerator {
             methodHeapReadMarshall(readMarshal, name, type, model);
         }
         StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(dvmodel.type().getPackage().getName()).append(";\n\n");
+        appendPackage(dvmodel, sb);
         sb.append("import static ").append(Compare.class.getName()).append(".*;\n");
         for (Class aClass : imported) {
             sb.append("import ").append(normalize(aClass)).append(";\n");
@@ -233,16 +301,18 @@ public class DataValueGenerator {
         return sb.toString();
     }
 
-    private static String simpleName(Class<?> type) {
+    public static String simpleName(Class<?> type) {
         String name = type.getName();
         return name.substring(name.lastIndexOf('.') + 1);
     }
 
-    private static CharSequence normalize(Class aClass) {
+    public static CharSequence normalize(Class aClass) {
         return aClass.getName().replace('$', '.');
     }
 
-    private static void generateObjectMethods(StringBuilder sb, DataValueModel<?> dvmodel, Map.Entry<String, FieldModel>[] entries, boolean offHeap) {
+    private static void generateObjectMethods(StringBuilder sb, DataValueModel<?> dvmodel,
+                                              Map.Entry<String, FieldModel>[] entries,
+                                              boolean offHeap) {
         int count = 0;
         StringBuilder hashCode = new StringBuilder();
         StringBuilder equals = new StringBuilder();
@@ -262,18 +332,18 @@ public class DataValueGenerator {
                 String getterName = (getter == null) ? getterName(getUsing) : getter.getName();
                 methodLongHashCode(hashCode, getterName, model, count);
 
-                if (getter != null)
+                if (getter != null) {
                     methodEquals(equals, getterName, model, simpleName(dvmodel.type()));
-                else {
+                    methodToString(toString, getterName, name, model);
+
+                } else {
                     methodEqualsGetUsing(getUsingEquals, getUsing.getName());
                     methodToStringGetUsing(toStringGetUsing, getUsing.getName(), name, model);
                 }
                 count++;
             }
 
-
             Bytes b;
-
 
             if (model.isArray()) {
                 String nameWithUpper = Character.toUpperCase(name.charAt(0)) + name.substring(1);
@@ -324,80 +394,114 @@ public class DataValueGenerator {
                 .append("    }\n");
     }
 
-
     private static Method getUsing(FieldModel model) {
         Method getUsing = model.getUsing();
         return getUsing;
     }
 
-    private static Method getGetter(FieldModel model) {
+    public static Method getGetter(FieldModel model) {
         Method getter = model.getter();
         if (getter == null) getter = model.indexedGetter();
         return getter;
     }
 
-    private static Method getVolatileGetter(FieldModel model) {
+    public static Method getVolatileGetter(FieldModel model) {
         Method getter = model.volatileGetter();
         if (getter == null) getter = model.volatileIndexedGetter();
         return getter;
     }
 
-    private static Method getSetter(FieldModel model) {
+    public static Method getSetter(FieldModel model) {
         Method setter = model.setter();
         if (setter == null) setter = model.indexedSetter();
 
         return setter;
     }
 
-    private static Method getOrderedSetter(FieldModel model) {
+    public static Method getOrderedSetter(FieldModel model) {
         Method setter = model.orderedSetter();
         if (setter == null) setter = model.orderedIndexedSetter();
 
         return setter;
     }
 
-    private static void methodCopy(StringBuilder copy, Method getter, Method setter, FieldModel model) {
+    private static void methodCopy(
+            StringBuilder copy, Method getter, Method setter, FieldModel model) {
         if (!model.isArray()) {
             if (model.setter() != null && getter != null) {
                 copy.append("        ").append(setter.getName());
                 copy.append("(from.").append(getter.getName()).append("());\n");
             }
         } else {
-            copy.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){");
-            copy.append("\n            ").append(setter.getName()).append("(i, from.").append(getter.getName()).append("(i));\n");
+            copy.append("        for (int i = 0; i < ").append(model.indexSize().value())
+                    .append("; i++){");
+            copy.append("\n            ").append(setter.getName()).append("(i, from.")
+                    .append(getter.getName()).append("(i));\n");
             copy.append("        }\n");
         }
     }
 
-    private static void methodWriteMarshall(StringBuilder writeMarshal, Method getter, Method setter, Class type, FieldModel model) {
+    private static void methodWriteMarshall(StringBuilder writeMarshal, Method getter,
+                                            Method setter, Class type, FieldModel model) {
         if (!model.isArray()) {
-            if (getter != null && setter != null)
+            if (getter != null && setter != null) {
+                writeMarshal.append("        {\n");
+//                saveCharSequencePosition(writeMarshal, type, "out");
                 writeMarshal.append("        out.write").append(bytesType(type)).append("(")
                         .append(getter.getName()).append("());\n");
+//                zeroOutRemainingCharSequenceBytesAndUpdatePosition(
+//                        writeMarshal, model, type, "out");
+                writeMarshal.append("        }\n");
+            }
             // otherwise skip.
         } else {
-            writeMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
+            writeMarshal.append("        for (int i = 0; i < ")
+                    .append(model.indexSize().value()).append("; i++){\n");
+//            saveCharSequencePosition(writeMarshal, type, "out");
             writeMarshal.append("            out.write").append(bytesType(type)).append("(")
                     .append(getter.getName()).append("(i));\n");
+//            zeroOutRemainingCharSequenceBytesAndUpdatePosition(
+//                    writeMarshal, model, type, "out");
             writeMarshal.append("        }\n");
         }
     }
 
-    private static void methodHeapReadMarshall(StringBuilder readMarshal, String name, Class type, FieldModel model) {
-        if (!model.isArray()) {
-            readMarshal.append("        _").append(name).append(" = in.read").append(bytesType(type)).append("(");
-            if ("Object".equals(bytesType(type)))
-                readMarshal.append(normalize(type)).append(".class");
-            readMarshal.append(");\n");
-        } else {
-            readMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
-            readMarshal.append("            _").append(name).append("[i] = in.read").append(bytesType(type)).append("(");
-            if ("Object".equals(bytesType(type)))
-                readMarshal.append(normalize(type)).append(".class");
-            readMarshal.append(");\n");
-            readMarshal.append("        }\n");
-        }
+    private static void saveCharSequencePosition(StringBuilder write, Class type, String bytes) {
+        if (CharSequence.class.isAssignableFrom(type))
+            write.append("            long pos = " + bytes + ".position();\n");
+    }
 
+    private static void zeroOutRemainingCharSequenceBytesAndUpdatePosition(
+            StringBuilder write, FieldModel model, Class type, String bytes) {
+        if (CharSequence.class.isAssignableFrom(type)) {
+            write.append("            long newPos = pos + ").append(fieldSize(model))
+                    .append(";\n");
+            write.append("            " + bytes + ".zeroOut(" + bytes +  ".position(), newPos);\n");
+            write.append("            " + bytes + ".position(newPos);\n");
+        }
+    }
+
+    private static void methodHeapReadMarshall(StringBuilder readMarshal, String name, Class type, FieldModel model) {
+
+        if(model.type() == Date.class){
+            readMarshal.append("        _").append(name).append(" = new Date(in.readLong());\n");
+        } else {
+            String str = bytesType(type);
+            if (!model.isArray()) {
+                readMarshal.append("        _").append(name).append(" = in.read").append(str).append("(");
+                if ("Object".equals(str) || "Enum".equals(str))
+                    readMarshal.append(normalize(type)).append(".class");
+                readMarshal.append(");\n");
+
+            } else {
+                readMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
+                readMarshal.append("            _").append(name).append("[i] = in.read").append(str).append("(");
+                if ("Object".equals(str) || "Enum".equals(str))
+                    readMarshal.append(normalize(type)).append(".class");
+                readMarshal.append(");\n");
+                readMarshal.append("        }\n");
+            }
+        }
     }
 
     private static void methodLongHashCode(StringBuilder hashCode, String getterName, FieldModel model, int count) {
@@ -406,20 +510,20 @@ public class DataValueGenerator {
 
         if (!model.isArray()) {
             hashCode.append("calcLongHashCode(").append(getterName).append("())");
+
         } else {
             hashCode.append("longHashCode_").append(model.name()).append("()");
         }
     }
 
-
     private static void methodEqualsGetUsing(StringBuilder equals, String getterName) {
         equals.append("        if(!isEqual(").append(getterName).append("(new StringBuilder()).toString(), that.").append(getterName).append("new StringBuilder().toString())) return false;\n");
     }
 
-
     private static void methodEquals(StringBuilder equals, String getterName, FieldModel model, String className) {
         if (!model.isArray()) {
             equals.append("        if(!isEqual(").append(getterName).append("(), that.").append(getterName).append("())) return false;\n");
+
         } else {
             equals.append("        for (int i = 0; i <" + model.indexSize().value() + "; i++) {\n");
             equals.append("            if(!isEqual(").append(getterName).append("(i), that.").append(getterName).append("(i))) return false;\n");
@@ -427,11 +531,8 @@ public class DataValueGenerator {
         }
     }
 
-
     private static void methodToStringGetUsing(StringBuilder toString, String getterName, String name, FieldModel model) {
-
         toString.append("            sb.append(\"").append(name).append("= \").append(").append(getterName).append("(new StringBuilder()));\n");
-
     }
 
     private static void methodToString(StringBuilder toString, String getterName, String name, FieldModel model) {
@@ -439,6 +540,7 @@ public class DataValueGenerator {
             toString.append("sb.append(\", \")\n;");
         if (!model.isArray()) {
             toString.append("            sb.append(\"").append(name).append("= \").append(").append(getterName).append("());\n");
+
         } else {
             toString
                     .append("              sb.append(\"").append(name).append("\").append(\"= [\");")
@@ -450,22 +552,26 @@ public class DataValueGenerator {
         }
     }
 
+    private static String nullAwareToString(String var) {
+        return "(" + var + " != null ? " + var + ".toString() : null)";
+    }
+
     private static void methodHeapSet(StringBuilder getterSetters, Method setter, String name, Class type, FieldModel model) {
         Class<?> setterType = setter.getParameterTypes()[setter.getParameterTypes().length - 1];
         if (!model.isArray()) {
             getterSetters.append("    public void ").append(setter.getName()).append('(').append(normalize(setterType)).append(" $) {\n");
             if (type == String.class && setterType != String.class)
-                getterSetters.append("        _").append(name).append(" = $.toString();\n");
+                getterSetters.append("        _").append(name).append(" = " + nullAwareToString("$") + ";\n");
             else
                 getterSetters.append("        _").append(name).append(" = $;\n");
+
         } else {
             getterSetters.append("    public void ").append(setter.getName()).append("(int i, ").append(normalize(setterType)).append(" $) {\n");
             getterSetters.append(boundsCheck(model.indexSize().value()));
             if (type == String.class && setterType != String.class)
-                getterSetters.append("        _").append(name).append("[i] = $.toString();\n");
+                getterSetters.append("        _").append(name).append("[i] = " + nullAwareToString("$") + ";\n");
             else
                 getterSetters.append("        _").append(name).append("[i] = $;\n");
-
         }
         getterSetters.append("    }\n\n");
     }
@@ -474,6 +580,7 @@ public class DataValueGenerator {
         if (!model.isArray()) {
             getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("() {\n");
             getterSetters.append("        return _").append(name).append(";\n");
+
         } else {
             getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("(int i) {\n");
             getterSetters.append(boundsCheck(model.indexSize().value()));
@@ -482,17 +589,13 @@ public class DataValueGenerator {
         getterSetters.append("    }\n\n");
     }
 
-
     private static void methodHeapGet(StringBuilder getterSetters, String name, Class type, String getterName) {
-
         getterSetters.append("    public ").append(normalize(type)).append(' ').append(getterName).append("() {\n");
         getterSetters.append("        return _").append(name).append(";\n");
         getterSetters.append("    }\n\n");
     }
 
-
     private static void methodHeapGetUsingWithStringBuilder(StringBuilder result, Method method, String name, Class type, FieldModel model) {
-
         final CharSequence returnType = method.getReturnType() == void.class ? "void" : normalize(method
                 .getReturnType());
 
@@ -514,13 +617,13 @@ public class DataValueGenerator {
         result.append("    }\n\n");
     }
 
-
     private static void heapFieldDeclarations(StringBuilder fieldDeclarations, Class type, String name, FieldModel model) {
         String vol = "";
         if (model.isVolatile()) vol = "volatile ";
 
         if (!model.isArray()) {
             fieldDeclarations.append("    private ").append(vol).append(normalize(type)).append(" _").append(name).append(";\n");
+
         } else {
             fieldDeclarations.append("    private ").append(vol).append(normalize(type)).append("[] _").append(name)
                     .append(" = new ").append(normalize(type)).append("[").append(model.indexSize().value()).append("];\n");
@@ -531,6 +634,7 @@ public class DataValueGenerator {
 
                 if (type.isInterface()) {
                     fieldDeclarations.append("$$Heap();\n");
+
                 } else {
                     fieldDeclarations.append("();\n");
                 }
@@ -542,6 +646,109 @@ public class DataValueGenerator {
     private static String boundsCheck(int check) {
         return "        if(i<0) throw new ArrayIndexOutOfBoundsException(i + \" must be greater than 0\");\n" +
                 "        if(i>=" + check + ") throw new ArrayIndexOutOfBoundsException(i + \" must be less than " + check + "\");\n";
+    }
+
+    public static void appendImported(SortedSet<Class> imported, StringBuilder sb) {
+        for (Class aClass : imported) {
+            sb.append("import ").append(aClass.getName().replace('$', '.')).append(";\n");
+        }
+    }
+
+    public static void appendPackage(DataValueModel<?> dvmodel, StringBuilder sb) {
+        sb.append("package ").append(getPackage(dvmodel)).append(";\n\n");
+    }
+
+    public static String getPackage(DataValueModel<?> dvmodel) {
+        return dvmodel.type().getPackage().getName();
+    }
+
+    public static int fieldSize(FieldModel model) {
+        return computeOffset(
+                (int) BYTES.alignAndConvert((long) model.nativeSize(), MemoryUnit.BITS), model);
+    }
+
+    public static TreeSet<Class> newImported() {
+        return new TreeSet<Class>(COMPARATOR);
+    }
+
+    public static boolean shouldImport(Class type) {
+        return !type.isPrimitive() && !type.getPackage().getName().equals("java.lang");
+    }
+
+    public static Map.Entry<String, FieldModel>[] heapSizeOrderedFieldsGrouped(DataValueModel<?> dvmodel) {
+        Map<String, ? extends FieldModel> fieldMap = dvmodel.fieldMap();
+        Map.Entry<String, FieldModel>[] entries =
+                fieldMap.entrySet().toArray(new Map.Entry[fieldMap.size()]);
+        Arrays.sort(entries, COMPARE_BY_GROUP_THEN_HEAP_SIZE);
+        return entries;
+    }
+
+    /**
+     * gets the getter name based on the getUsing
+     */
+    private static String getterName(Method getUsingMethod) {
+        String name = getUsingMethod.getName();
+        if (!name.startsWith("getUsing"))
+            throw new IllegalArgumentException("expected the getUsingXX method to start with the text 'getUsing'.");
+        return "get" + name.substring("getUsing".length());
+    }
+
+    private static void methodGetUsingWithStringBuilder(StringBuilder result, Method method, Class type, boolean isVolatile, String name) {
+        String read = "read";
+        if (isVolatile) read = "readVolatile";
+
+        if (method.getParameterTypes().length != 1)
+            return;
+
+        if (!StringBuilder.class.equals(method.getParameterTypes()[0]))
+            return;
+
+        if (type != String.class)
+            return;
+
+        final CharSequence returnType = method.getReturnType() == void.class ? "void" : normalize(method
+                .getReturnType());
+
+        result.append("    public ").append(returnType).append(' ').append(method
+                .getName())
+                .append("(StringBuilder builder){\n");
+
+        result.append("     _bytes.position(_offset + ").append(name.toUpperCase()).append(");\n");
+        result.append("     _bytes.").append(read).append(bytesType(type)).append("(builder);\n");
+
+        if (method.getReturnType() != void.class) {
+            result.append("     return builder;\n");
+        }
+        result.append("    }\n\n");
+    }
+
+    public static int computeOffset(int offset, FieldModel model) {
+        if (model.indexSize() == null) {
+            return offset;
+
+        } else {
+            return model.indexSize().value() * offset;
+        }
+    }
+
+    public static int computeNonScalarOffset(DataValueModel dvmodel, Class type) {
+        int offset = 0;
+        DataValueModel dvmodel2 = dvmodel.nestedModel(type);
+        Map.Entry<String, FieldModel>[] entries2 = heapSizeOrderedFieldsGrouped(dvmodel2);
+        for (Map.Entry<String, ? extends FieldModel> entry2 : entries2) {
+            FieldModel model2 = entry2.getValue();
+            int add;
+            if (dvmodel2.isScalar(model2.type())) {
+                add = fieldSize(model2);
+
+            } else {
+                add = computeNonScalarOffset(dvmodel2, model2.type());
+                if (model2.isArray())
+                    add *= model2.indexSize().value();
+            }
+            offset += add;
+        }
+        return offset;
     }
 
     public <T> T heapInstance(Class<T> tClass) {
@@ -565,7 +772,7 @@ public class DataValueGenerator {
             try {
                 String actual = generateHeapObject(tClass);
                 if (dumpCode)
-                    LOGGER.info(actual);
+                    LoggerFactory.getLogger(DataValueGenerator.class).info(actual);
                 heapClass = CompilerUtils.CACHED_COMPILER.loadFromJava(classLoader, className, actual);
             } catch (ClassNotFoundException e) {
                 throw new AssertionError(e);
@@ -594,6 +801,8 @@ public class DataValueGenerator {
     }
 
     public <T> Class acquireNativeClass(Class<T> tClass) {
+        if (!tClass.isInterface())
+            return tClass;
         Class nativeClass = nativeClassMap.get(tClass);
         if (nativeClass != null)
             return nativeClass;
@@ -602,14 +811,14 @@ public class DataValueGenerator {
             // touch them to make sure they are loaded.
             Class clazz2 = acquireNativeClass(clazz);
         }
-        String actual = new DataValueGenerator().generateNativeObject(dvmodel);
-        if (dumpCode)
-            LOGGER.info(actual);
         ClassLoader classLoader = tClass.getClassLoader();
         String className = tClass.getName() + "$$Native";
         try {
             nativeClass = classLoader.loadClass(className);
         } catch (ClassNotFoundException ignored) {
+            String actual = new DataValueGenerator().generateNativeObject(dvmodel);
+            if (dumpCode)
+                LoggerFactory.getLogger(DataValueGenerator.class).info(actual);
             try {
                 nativeClass = CompilerUtils.CACHED_COMPILER.loadFromJava(classLoader, className, actual);
             } catch (ClassNotFoundException e) {
@@ -625,7 +834,7 @@ public class DataValueGenerator {
     }
 
     public String generateNativeObject(DataValueModel<?> dvmodel) {
-        SortedSet<Class> imported = new TreeSet<Class>(COMPARATOR);
+        SortedSet<Class> imported = newImported();
         imported.add(BytesMarshallable.class);
         imported.add(ObjectOutput.class);
         imported.add(ObjectInput.class);
@@ -642,15 +851,13 @@ public class DataValueGenerator {
         StringBuilder copy = new StringBuilder();
         StringBuilder nestedBytes = new StringBuilder();
 
-        Map<String, ? extends FieldModel> fieldMap = dvmodel.fieldMap();
-        Map.Entry<String, FieldModel>[] entries = fieldMap.entrySet().toArray(new Map.Entry[fieldMap.size()]);
-        Arrays.sort(entries, COMPARE_BY_HEAP_SIZE);
+        Map.Entry<String, FieldModel>[] entries = heapSizeOrderedFieldsGrouped(dvmodel);
         int offset = 0;
         for (Map.Entry<String, ? extends FieldModel> entry : entries) {
             String name = entry.getKey();
             FieldModel model = entry.getValue();
             Class type = model.type();
-            if (!type.isPrimitive() && !type.getPackage().getName().equals("java.lang"))
+            if (shouldImport(type))
                 imported.add(type);
             String NAME = "_offset + " + name.toUpperCase();
             final Method setter = getSetter(model);
@@ -740,12 +947,15 @@ public class DataValueGenerator {
                 methodWriteMarshall(writeMarshal, defaultGetter, defaultSetter, type, model);
                 methodReadMarshall(readMarshal, defaultGetter, defaultSetter, type, model);
 
-                offset += computeOffset((model.nativeSize() + 7) >> 3, model);
+                if(!Enum.class.isAssignableFrom(type))
+                    offset += fieldSize(model);
+
             } else {
                 staticFieldDeclarations.append("    private static final int ").append(name.toUpperCase()).append(" = ").append(offset).append(";\n");
                 nonScalarFieldDeclaration(staticFieldDeclarations, type, name, model);
                 if (defaultSetter == null) {
                     copy.append("        _").append(name).append(".copyFrom(from.").append(getter.getName()).append("());\n");
+
                 } else {
                     methodCopy(copy, defaultGetter, defaultSetter, model);
                     methodNonScalarSet(getterSetters, defaultSetter, name, type, model);
@@ -764,11 +974,9 @@ public class DataValueGenerator {
                 .append("    private Bytes _bytes;\n")
                 .append("    private long _offset;\n");
         StringBuilder sb = new StringBuilder();
-        sb.append("package ").append(dvmodel.type().getPackage().getName()).append(";\n\n");
+        appendPackage(dvmodel, sb);
         sb.append("import static ").append(Compare.class.getName()).append(".*;\n");
-        for (Class aClass : imported) {
-            sb.append("import ").append(aClass.getName().replace('$', '.')).append(";\n");
-        }
+        appendImported(imported, sb);
         sb.append("\npublic class ").append(simpleName(dvmodel.type()))
                 .append("$$Native implements ").append(simpleName(dvmodel.type()).replace('$', '.'))
                 .append(", BytesMarshallable, Byteable, Copyable<").append(normalize(dvmodel.type())).append("> {\n");
@@ -812,16 +1020,6 @@ public class DataValueGenerator {
         return sb.toString();
     }
 
-    /**
-     * gets the getter name based on the getUsing
-     */
-    private static String getterName(Method getUsingMethod) {
-        String name = getUsingMethod.getName();
-        if (!name.startsWith("getUsing"))
-            throw new IllegalArgumentException("expected the getUsingXX method to start with the text 'getUsing'.");
-        return "get" + name.substring("getUsing".length());
-    }
-
     public boolean isDumpCode() {
         return dumpCode;
     }
@@ -834,10 +1032,16 @@ public class DataValueGenerator {
         Class<?> setterType = setter.getParameterTypes()[setter.getParameterTypes().length - 1];
         String write = "write";
         if (isVolatile) write = "writeOrdered";
-
-        if (!model.isArray()) {
+        if (model.type() == Date.class) {
+            getterSetters.append("\n\n    public void ").append(setter.getName()).append('(').append(normalize(setterType)).append(" $) {\n");
+            getterSetters.append("        _bytes.").append(write).append("Long").append("(").append(NAME).append(", ");
+        } else if(Enum.class.isAssignableFrom(type)){
+            getterSetters.append("\n\n    public void ").append(setter.getName()).append('(').append(normalize(setterType)).append(" $) {\n");
+            getterSetters.append("        _bytes.").append(write).append("Enum").append("(");
+        } else if (!model.isArray()) {
             getterSetters.append("\n\n    public void ").append(setter.getName()).append('(').append(normalize(setterType)).append(" $) {\n");
             getterSetters.append("        _bytes.").append(write).append(bytesType(type)).append("(").append(NAME).append(", ");
+
         } else {
             getterSetters.append("    public void ").append(setter.getName()).append("(int i, ");
             getterSetters.append(normalize(setterType)).append(" $) {\n");
@@ -848,11 +1052,14 @@ public class DataValueGenerator {
 
         if (CharSequence.class.isAssignableFrom(type))
             getterSetters.append(model.size().value()).append(", ");
-        getterSetters.append("$);\n");
+
+        if (model.type() == Date.class) {
+            getterSetters.append("$.getTime());\n");
+        } else {
+            getterSetters.append("$);\n");
+        }
         getterSetters.append("    }\n\n");
     }
-
-
     private void methodGet(StringBuilder getterSetters, Class type, String NAME, boolean isVolatile, String name) {
         String read = "read";
         if (isVolatile) read = "readVolatile";
@@ -865,7 +1072,14 @@ public class DataValueGenerator {
         String read = "read";
         if (isVolatile) read = "readVolatile";
 
-        if (!model.isArray()) {
+        if(model.type() == Date.class){
+            getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("() {\n");
+            getterSetters.append("        return new Date( _bytes.").append(read).append("Long").append("(").append(NAME).append("));\n");
+        } else if (Enum.class.isAssignableFrom(model.type())) {
+            getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("() {\n");
+            //getterSetters.append("        return _bytes.").append(read).append("Enum").append("(").append(NAME).append(");\n");
+            getterSetters.append("        return _bytes.").append(read).append("Enum").append("(").append(type.getName()).append(".class);\n");
+        } else if (!model.isArray()) {
             getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("() {\n");
             getterSetters.append("        return _bytes.").append(read).append(bytesType(type)).append("(").append(NAME).append(");\n");
 
@@ -875,47 +1089,14 @@ public class DataValueGenerator {
             getterSetters.append("        return _bytes.").append(read).append(bytesType(type)).append("(").append(NAME);
             getterSetters.append(" + i * ").append((model.nativeSize() + 7) >> 3);
             getterSetters.append(");\n");
-
         }
         getterSetters.append("    }\n\n");
     }
 
-
-    private static void methodGetUsingWithStringBuilder(StringBuilder result, Method method, Class type, boolean isVolatile, String name) {
-
-        String read = "read";
-        if (isVolatile) read = "readVolatile";
-
-        if (method.getParameterTypes().length != 1)
-            return;
-
-        if (!StringBuilder.class.equals(method.getParameterTypes()[0]))
-            return;
-
-        if (type != String.class)
-            return;
-
-        final CharSequence returnType = method.getReturnType() == void.class ? "void" : normalize(method
-                .getReturnType());
-
-        result.append("    public ").append(returnType).append(' ').append(method
-                .getName())
-                .append("(StringBuilder builder){\n");
-
-        result.append("     _bytes.position(_offset + ").append(name.toUpperCase()).append(");\n");
-        result.append("     _bytes.").append(read).append(bytesType(type)).append("(builder);\n");
-
-        if (method.getReturnType() != void.class) {
-            result.append("     return builder;\n");
-        }
-        result.append("    }\n\n");
-
-    }
-
-
     private void methodNonScalarWriteMarshall(StringBuilder writeMarshal, String name, FieldModel model) {
         if (!model.isArray()) {
             writeMarshal.append("         _").append(name).append(".writeMarshallable(out);\n");
+
         } else {
             writeMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
             writeMarshal.append("            _").append(name).append("[i].writeMarshallable(out);\n");
@@ -924,21 +1105,27 @@ public class DataValueGenerator {
     }
 
     private void methodReadMarshall(StringBuilder readMarshal, Method getter, Method setter, Class type, FieldModel model) {
-        if (!model.isArray()) {
+        if(model.type() == Date.class){
+            if (getter != null && setter != null)
+                readMarshal.append("        ").append(setter.getName()).append("((Date)in.read").append(bytesType(type)).append("());\n");
+        } else if (Enum.class.isAssignableFrom(model.type())) {
+            if (getter != null && setter != null)
+                readMarshal.append("        ").append(setter.getName()).append("(in.readEnum(" + model.type().getName() + ".class));\n");
+        } else if (!model.isArray()) {
             if (getter != null && setter != null)
                 readMarshal.append("        ").append(setter.getName()).append("(in.read").append(bytesType(type)).append("());\n");
+
         } else {
             readMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
             readMarshal.append("            ").append(setter.getName()).append("(i, in.read").append(bytesType(type)).append("());\n");
             readMarshal.append("        }\n");
         }
-
-
     }
 
     private void methodNonScalarReadMarshall(StringBuilder readMarshal, String name, FieldModel model) {
         if (!model.isArray()) {
             readMarshal.append("         _").append(name).append(".readMarshallable(in);\n");
+
         } else {
             readMarshal.append("        for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
             readMarshal.append("            _").append(name).append("[i].readMarshallable(in);\n");
@@ -946,18 +1133,11 @@ public class DataValueGenerator {
         }
     }
 
-    private int computeOffset(int offset, FieldModel model) {
-        if (model.indexSize() == null) {
-            return offset;
-        } else {
-            return model.indexSize().value() * offset;
-        }
-    }
-
     private void nonScalarFieldDeclaration(StringBuilder fieldDeclarations, Class type, String name, FieldModel model) {
         fieldDeclarations.append("    private final ").append(type.getName()).append("$$Native _").append(name);
         if (!model.isArray()) {
             fieldDeclarations.append(" = new ").append(type.getName()).append("$$Native();\n");
+
         } else {
             fieldDeclarations.append("[] = new ").append(type.getName()).append("$$Native[").append(model.indexSize().value()).append("];\n");
             fieldDeclarations.append("    {\n")
@@ -973,16 +1153,16 @@ public class DataValueGenerator {
         if (!model.isArray()) {
             getterSetters.append("    public void ").append(setter.getName()).append('(').append(normalize(setterType)).append(" $) {\n");
             if (type == String.class && setterType != String.class)
-                getterSetters.append("        _").append(name).append(" = $.toString();\n");
+                getterSetters.append("        _").append(name).append(" = " + nullAwareToString("$") + ";\n");
             else
                 getterSetters.append("        _").append(name).append(".copyFrom($);\n");
+
         } else {
             getterSetters.append("    public void ").append(setter.getName()).append("(int i, ").append(normalize(setterType)).append(" $) {\n");
             if (type == String.class && setterType != String.class)
-                getterSetters.append("        _").append(name).append("[i] = $.toString();\n");
+                getterSetters.append("        _").append(name).append("[i] = " + nullAwareToString("$") + ";\n");
             else
                 getterSetters.append("        _").append(name).append("[i].copyFrom($);\n");
-
         }
         getterSetters.append("    }\n\n");
     }
@@ -991,6 +1171,7 @@ public class DataValueGenerator {
         if (!model.isArray()) {
             getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("() {\n");
             getterSetters.append("        return _").append(name).append(";\n");
+
         } else {
             getterSetters.append("    public ").append(normalize(type)).append(' ').append(getter.getName()).append("(int i) {\n");
             getterSetters.append("        return _").append(name).append("[i];\n");
@@ -1001,24 +1182,12 @@ public class DataValueGenerator {
     private void methodNonScalarBytes(StringBuilder nestedBytes, String name, String NAME, int size, FieldModel model) {
         if (!model.isArray()) {
             nestedBytes.append("        ((Byteable) _").append(name).append(").bytes(bytes, ").append(NAME).append(");\n");
+
         } else {
             nestedBytes.append("       for (int i = 0; i < ").append(model.indexSize().value()).append("; i++){\n");
             nestedBytes.append("           ((Byteable) _").append(name).append("[i]).bytes(bytes, ").append(NAME);
             nestedBytes.append(" + (i * ").append(size).append("));\n");
             nestedBytes.append("       }\n");
         }
-    }
-
-    private int computeNonScalarOffset(DataValueModel dvmodel, Class type) {
-        int offset = 0;
-        DataValueModel dvmodel2 = dvmodel.nestedModel(type);
-        Map<String, ? extends FieldModel> fieldMap2 = dvmodel2.fieldMap();
-        Map.Entry<String, FieldModel>[] entries2 = fieldMap2.entrySet().toArray(new Map.Entry[fieldMap2.size()]);
-        Arrays.sort(entries2, COMPARE_BY_HEAP_SIZE);
-        for (Map.Entry<String, ? extends FieldModel> entry2 : entries2) {
-            FieldModel model2 = entry2.getValue();
-            offset += computeOffset((model2.nativeSize() + 7) >> 3, model2);
-        }
-        return offset;
     }
 }

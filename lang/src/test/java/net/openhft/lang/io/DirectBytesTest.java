@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,27 +26,6 @@ import static org.junit.Assert.*;
  * @author peter.lawrey
  */
 public class DirectBytesTest {
-    @Test
-    public void testSimpleLock() {
-        DirectBytes bytes = new DirectStore(64).bytes();
-        bytes.writeLong(0, -1L);
-        assertFalse(bytes.tryLockLong(0));
-        bytes.writeLong(0, 0L);
-        assertTrue(bytes.tryLockLong(0));
-        long val1 = bytes.readLong(0);
-        assertTrue(bytes.tryLockLong(0));
-        bytes.unlockLong(0);
-        assertEquals(val1, bytes.readLong(0));
-        bytes.unlockLong(0);
-        assertEquals(0L, bytes.readLong(0));
-        try {
-            bytes.unlockLong(0);
-            fail();
-        } catch (IllegalMonitorStateException e) {
-            // expected.
-        }
-    }
-
     private static void manyToggles(@NotNull DirectStore store1, int lockCount, int from, int to) {
         long id = Thread.currentThread().getId();
         assertEquals(0, id >>> 24);
@@ -71,6 +50,7 @@ public class DirectBytesTest {
                 int toggle1 = slice1.readInt(4);
                 if (toggle1 == from) {
                     slice1.writeInt(4L, to);
+
                 } else {
                     // noinspection AssignmentToForLoopParameter,AssignmentToForLoopParameter
                     i--;
@@ -105,6 +85,7 @@ public class DirectBytesTest {
                 long toggle1 = slice1.readLong(8);
                 if (toggle1 == from) {
                     slice1.writeLong(8L, to);
+
                 } else {
                     // noinspection AssignmentToForLoopParameter,AssignmentToForLoopParameter
                     i--;
@@ -116,7 +97,28 @@ public class DirectBytesTest {
     }
 
     @Test
-    public void testAllocate() throws Exception {
+    public void testSimpleLock() {
+        DirectBytes bytes = new DirectStore(64).bytes();
+        bytes.writeLong(0, -1L);
+        assertFalse(bytes.tryLockLong(0));
+        bytes.writeLong(0, 0L);
+        assertTrue(bytes.tryLockLong(0));
+        long val1 = bytes.readLong(0);
+        assertTrue(bytes.tryLockLong(0));
+        bytes.unlockLong(0);
+        assertEquals(val1, bytes.readLong(0));
+        bytes.unlockLong(0);
+        assertEquals(0L, bytes.readLong(0));
+        try {
+            bytes.unlockLong(0);
+            fail();
+        } catch (IllegalMonitorStateException e) {
+            // expected.
+        }
+    }
+
+    @Test
+    public void testAllocate()   {
         long size = 1L << 24; // 31; don't overload cloud-bees
         DirectStore store = DirectStore.allocate(size);
         assertEquals(size, store.size());
@@ -176,7 +178,7 @@ public class DirectBytesTest {
     }
 
     @Test
-    public void testLocking2() throws Exception {
+    public void testLocking2() throws InterruptedException {
         if (Runtime.getRuntime().availableProcessors() < 2) {
             System.err.println("Test requires 2 CPUs, skipping");
             return;
@@ -211,6 +213,7 @@ public class DirectBytesTest {
                             slice1.writeInt(4, 0);
                             // if (i % 10000== 0)
                             // System.out.println("t: " + i);
+
                         } else {
                             // noinspection AssignmentToForLoopParameter
                             i--;
@@ -220,6 +223,7 @@ public class DirectBytesTest {
                             slice2.writeInt(4, 0);
                             // if (i % 10000== 0)
                             // System.out.println("t: " + i);
+
                         } else {
                             // noinspection AssignmentToForLoopParameter
                             i--;
@@ -266,6 +270,7 @@ public class DirectBytesTest {
                 slice1.writeInt(4, 1);
                 // if (i % 10000== 0)
                 // System.out.println("t: " + i);
+
             } else {
                 // noinspection AssignmentToForLoopParameter
                 i--;
@@ -275,6 +280,7 @@ public class DirectBytesTest {
                 slice2.writeInt(4, 1);
                 // if (i % 10000== 0)
                 // System.out.println("t: " + i);
+
             } else {
                 // noinspection AssignmentToForLoopParameter
                 i--;
@@ -297,7 +303,6 @@ public class DirectBytesTest {
         store1.free();
         store2.free();
     }
-
 
     @Test
     @Ignore

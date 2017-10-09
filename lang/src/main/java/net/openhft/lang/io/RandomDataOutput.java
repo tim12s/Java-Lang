@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,8 +16,9 @@
 
 package net.openhft.lang.io;
 
-import net.openhft.lang.model.constraints.NotNull;
-import net.openhft.lang.model.constraints.Nullable;
+import net.openhft.lang.model.Byteable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.ObjectOutput;
 import java.nio.ByteBuffer;
@@ -30,22 +31,49 @@ import java.util.RandomAccess;
  */
 public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommon {
 
-
     /**
-     * Copy from one Bytes to another, moves the position by length
+     * Copies the contents of a RandomDataInput from the position to the limit.
      *
+     * <p> This method transfers the bytes remaining in the given source
+     * buffer into this buffer.  If there are more bytes remaining in the
+     * source buffer than in this buffer, that is, if
+     * <tt>src.remaining()</tt>&nbsp;<tt>&gt;</tt>&nbsp;<tt>remaining()</tt>,
+     * then no bytes are transferred and a {@link
+     * java.nio.BufferOverflowException} is thrown.
+     *
+     * <p> Otherwise, this method copies
+     * <i>n</i>&nbsp;=&nbsp;<tt>src.remaining()</tt> bytes from the given
+     * buffer into this buffer, starting at each buffer's current position.
+     * The positions of both buffers are then incremented by <i>n</i>.
+     *
+     * <p> In other words, an invocation of this method of the form
+     * <tt>dst.write(src)</tt> has exactly the same effect as the loop
+     *
+     * <pre>
+     *     while (src.hasRemaining())
+     *         dst.writeByte(src.readByte()); 
+     *  </pre> 
+
      * @param bytes to copy
      */
     void write(RandomDataInput bytes);
 
     /**
-     * Copy from one Bytes to another, moves the position by length
+     * Copy from one Bytes to another, moves the position of "this" RandomDataOutput by the length.  
+     * The position of the RandomDataInput is not used or altered.
      *
      * @param bytes    to copy
      * @param position to copy from
      * @param length   to copy
      */
     void write(RandomDataInput bytes, long position, long length);
+
+    /**
+     * Copies the contents of a Byteable from the offset for maxSize bytes, moves the position of "this" RandomDataOutput by the maxSize
+     *
+     * @param byteable to copy
+     */
+    void write(@NotNull Byteable byteable);
 
     /**
      * Writes to the output stream the eight low-order bits of the argument <code>b</code>. The 24 high-order  bits of
@@ -122,6 +150,8 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      */
     void write(long offset, byte[] bytes);
 
+    void write(long offset, Bytes bytes);
+
     /**
      * Writes <code>len</code> bytes from array <code>bytes</code>, in order,  to the output stream.  If
      * <code>bytes</code> is <code>null</code>, a <code>NullPointerException</code> is thrown.  If <code>off</code> is
@@ -136,6 +166,12 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      */
     @Override
     void write(byte[] bytes, int off, int len);
+
+    void write(long offset, byte[] bytes, int off, int len);
+
+    void write(@NotNull char[] data);
+
+    void write(@NotNull char[] data, int off, int len);
 
     /**
      * Writes a <code>boolean</code> value to this output stream. If the argument <code>v</code> is <code>true</code>,
@@ -159,7 +195,6 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * @param offset to write boolean
      * @param v      the boolean to be written.
      */
-
     void writeBoolean(long offset, boolean v);
 
     /**
@@ -632,7 +667,7 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * same time.
      *
      * @param offset to write to
-     * @param v value to write
+     * @param v      value to write
      */
     void writeOrderedFloat(long offset, float v);
 
@@ -689,7 +724,7 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * same time.
      *
      * @param offset to write to
-     * @param v value to write
+     * @param v      value to write
      */
     void writeOrderedDouble(long offset, double v);
 
@@ -714,9 +749,18 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * bytes are actually written, high-order byte first, in exactly the manner of the <code>writeChar</code> method.
      *
      * @param s the string value to be written. Cannot be null.
+     * @see #writeChars(CharSequence)
      */
     @Override
     void writeChars(@NotNull String s);
+
+    /**
+     * Writes chars of the given {@code CharSequence} to the bytes, without encoding.
+     *
+     * @param cs the {@code CharSequence} to be written. Cannot be null.
+     * @see #writeChars(String)
+     */
+    void writeChars(@NotNull CharSequence cs);
 
     /**
      * Writes two bytes of length information to the output stream, followed by the <a
@@ -756,9 +800,9 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * i.e. one byte longer for short strings, but is not limited in length. 2) The string can be null.
      *
      * @param s the string value to be written. Can be null.
+     * @throws IllegalArgumentException if there is not enough space left
      */
-    void writeUTFΔ(@Nullable CharSequence s);
-
+    void writeUTFΔ(@Nullable CharSequence s) throws IllegalArgumentException;
 
     /**
      * Write the same encoding as <code>writeUTF</code> with the following changes.  1) The length is stop bit encoded
@@ -771,8 +815,29 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      */
     void writeUTFΔ(long offset, int maxSize, @Nullable CharSequence s) throws IllegalStateException;
 
+    void write8bitText(@Nullable CharSequence s);
     /**
-     * Copies the contents of a ByteBuffer from the potision ot the limit.
+     * Copies the contents of a ByteBuffer from the position to the limit.
+     *
+     * <p> This method transfers the bytes remaining in the given source
+     * buffer into this buffer.  If there are more bytes remaining in the
+     * source buffer than in this buffer, that is, if
+     * <tt>src.remaining()</tt>&nbsp;<tt>&gt;</tt>&nbsp;<tt>remaining()</tt>,
+     * then no bytes are transferred and a {@link
+     * java.nio.BufferOverflowException} is thrown.
+     *
+     * <p> Otherwise, this method copies
+     * <i>n</i>&nbsp;=&nbsp;<tt>src.remaining()</tt> bytes from the given
+     * buffer into this buffer, starting at each buffer's current position.
+     * The positions of both buffers are then incremented by <i>n</i>.
+     *
+     * <p> In other words, an invocation of this method of the form
+     * <tt>dst.write(src)</tt> has exactly the same effect as the loop
+     *
+     * <pre>
+     *     while (src.hasRemaining())
+     *         dst.writeByte(src.get()); 
+     *  </pre> 
      *
      * @param bb to copy.
      */
@@ -796,7 +861,7 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      * <p>This can be read by the <code>readList</code> method of <code>RandomInputStream</code> and the reader must know
      * the type of each element.  You can send the class first by using <code>writeEnum</code> of the element class
      *
-     * @param <E> the class of the list elements
+     * @param <E>  the class of the list elements
      * @param list to be written
      */
     <E> void writeList(@NotNull Collection<E> list);
@@ -827,7 +892,7 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
     /**
      * Write an object with the assumption that the objClass will be provided when the class is read.
      *
-     * @param <OBJ> the class of the object to write
+     * @param <OBJ>    the class of the object to write
      * @param objClass class to write
      * @param obj      to write
      */
@@ -850,14 +915,23 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
     Bytes zeroOut();
 
     /**
-     * fill the Bytes with zeros, and clear the position.
+     * fill the Bytes with zeros.
      *
      * @param start first byte to zero out
-     * @param end the first byte after the last to zero out (exclusive bound)
+     * @param end   the first byte after the last to zero out (exclusive bound)
      * @return this
      */
     Bytes zeroOut(long start, long end);
 
+    /**
+     * fill the Bytes with zeros, and clear the position, avoiding touching pages unnecessarily
+     *
+     * @param start     first byte to zero out
+     * @param end       the first byte after the last to zero out (exclusive bound)
+     * @param ifNotZero only set to zero after checking the value is not zero.
+     * @return this
+     */
+    Bytes zeroOut(long start, long end, boolean ifNotZero);
 
     /**
      * Check the end of the stream has not overflowed.  Otherwise this doesn't do anything.
@@ -870,4 +944,6 @@ public interface RandomDataOutput extends ObjectOutput, RandomAccess, BytesCommo
      */
     @Override
     void close();
+
+    void writeEnum(long offset, int len, Object object);
 }

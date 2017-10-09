@@ -1,11 +1,13 @@
 /*
- * Copyright 2014 Peter Lawrey
+ * Copyright 2014 Higher Frequency Trading
+ *
+ * http://www.higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +16,6 @@
  * limitations under the License.
  */
 package net.openhft.lang;
-
 
 import java.util.LinkedList;
 import java.util.List;
@@ -131,6 +132,7 @@ public class WaitStrategyBuilder {
         public void await(int counter) {
             if(counter < this.limit) {
                 this.waiter1.await();
+
             } else {
                 this.waiter2.await();
             }
@@ -156,8 +158,10 @@ public class WaitStrategyBuilder {
         public void await(int counter) {
             if(counter < this.limit1) {
                 this.waiter1.await();
+
             } else if(counter < this.limit2) {
                 this.waiter2.await();
+
             } else {
                 this.waiter3.await();
             }

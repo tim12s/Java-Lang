@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,6 +20,8 @@ import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.Serializable;
 
 import static org.junit.Assert.*;
 
@@ -66,7 +68,7 @@ public class VanillaMappedFileTest {
     // *************************************************************************
 
     @Test
-    public void testCreate() throws Exception {
+    public void testCreate() throws IOException {
         File f1 = newTempraryFile("vmf-create-1");
         File f2 = newTempraryFile("vmf-create-2");
 
@@ -84,9 +86,9 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testAcquireBytes() throws Exception {
+    public void testAcquireBytes() throws IOException {
         VanillaMappedFile vmf = VanillaMappedFile.readWrite(
-            newTempraryFile("vmf-acquire-buffer"));
+                newTempraryFile("vmf-acquire-buffer"));
 
         assertTrue(new File(vmf.path()).exists());
 
@@ -108,9 +110,9 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testAcquireBlocks1() throws Exception {
+    public void testAcquireBlocks1() throws IOException {
         VanillaMappedBlocks blocks = VanillaMappedBlocks.readWrite(
-            newTempraryFile("vmf-acquire-blocks-1"),
+                newTempraryFile("vmf-acquire-blocks-1"),
             128);
 
         assertTrue(new File(blocks.path()).exists());
@@ -142,9 +144,9 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testAcquireBlocks2() throws Exception {
+    public void testAcquireBlocks2() throws IOException {
         VanillaMappedBlocks blocks = VanillaMappedBlocks.readWrite(
-            newTempraryFile("vmf-acquire-blocks-2"),
+                newTempraryFile("vmf-acquire-blocks-2"),
             64);
 
         assertTrue(new File(blocks.path()).exists());
@@ -164,7 +166,7 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testAcquireOverlap() throws Exception {
+    public void testAcquireOverlap() throws IOException {
         File path = newTempraryFile("vmf-acquire-overlap");
 
         VanillaMappedFile   vmf    = VanillaMappedFile.readWrite(path);
@@ -206,7 +208,7 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testReopen() throws Exception {
+    public void testReopen() throws IOException {
         File file = newTempraryFile("vmf-reopen");
 
         {
@@ -241,14 +243,14 @@ public class VanillaMappedFileTest {
     // *************************************************************************
 
     @Test
-    public void testMappedCache1() throws Exception {
+    public void testMappedCache1() throws IOException {
         VanillaMappedCache<Integer> cache = new VanillaMappedCache();
 
         assertEquals(cache.size(),0);
         assertNull(cache.get(1));
 
-        cache.put(1,newTempraryFile("vmc-1-v1"), 64);
-        cache.put(2,newTempraryFile("vmc-1-v2"),128);
+        cache.put(1, newTempraryFile("vmc-1-v1"), 64);
+        cache.put(2, newTempraryFile("vmc-1-v2"), 128);
 
         assertEquals(cache.size(),2);
 
@@ -267,11 +269,11 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testMappedCache2() throws Exception {
+    public void testMappedCache2() throws IOException {
         final int size = 5;
         VanillaMappedCache<Integer> cache = new VanillaMappedCache(size, true);
         for(int i=0;i<10;i++) {
-            cache.put(i,newTempraryFile("vmc-2-v" + i),8 * i,i);
+            cache.put(i, newTempraryFile("vmc-2-v" + i), 8 * i, i);
             if(i >= size) {
                 assertEquals(cache.size(), size - 1);
             }
@@ -281,6 +283,7 @@ public class VanillaMappedFileTest {
             if(i >= 6) {
                 assertNotNull(cache.get(i));
                 assertEquals(cache.get(i).index(),i);
+
             } else {
                 assertNull(cache.get(i));
             }
@@ -290,7 +293,7 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testMappedCache3() throws Exception {
+    public void testMappedCache3() throws IOException {
         VanillaMappedCache<Integer> cache = new VanillaMappedCache(32, false);
         VanillaMappedBytes buffer = null;
         File file = null;
@@ -324,9 +327,9 @@ public class VanillaMappedFileTest {
     }
 
     @Test
-    public void testMappedCache4() throws Exception {
+    public void testMappedCache4() throws IOException {
         VanillaMappedCache<Integer> cache = new VanillaMappedCache(10000, true);
-        VanillaMappedBytes buffer = cache.put(1,newTempraryFile("vmc-4"),256,1);
+        VanillaMappedBytes buffer = cache.put(1, newTempraryFile("vmc-4"), 256, 1);
 
         buffer.reserve();
         assertEquals(2,buffer.refCount());
@@ -336,6 +339,38 @@ public class VanillaMappedFileTest {
 
         cache.close();
         assertEquals(0,buffer.refCount());
+    }
+
+    // *************************************************************************
+    //
+    // *************************************************************************
+
+    @Test
+    public void testMessageKeySerialization() throws IOException {
+        File path = newTempraryFile("vmc-x");
+        VanillaMappedBytes bytes = VanillaMappedFile.readWriteBytes(path, 1024, 0,
+                FileLifecycleListener.FileLifecycleListeners.CONSOLE);
+
+        bytes.writeObject(new MessageKey("type", 123L));
+        bytes.flush();
+
+        bytes.position(0);
+        System.out.println("" + bytes.readObject(MessageKey.class));
+
+        bytes.close();
+    }
+
+    public static class MessageKey implements Serializable {
+        private String arg1;
+        private long arg2;
+        public MessageKey(String arg1, long arg2) {
+            this.arg1 = arg1;
+            this.arg2 = arg2;
+        }
+        @Override
+        public String toString() {
+            return "MessageKey{" + "arg1='" + arg1 + ", arg2=" + arg2 + "}";
+        }
     }
 }
 

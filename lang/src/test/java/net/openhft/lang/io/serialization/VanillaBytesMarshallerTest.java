@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,17 +19,22 @@ package net.openhft.lang.io.serialization;
 import net.openhft.lang.io.DirectBytes;
 import net.openhft.lang.io.DirectStore;
 import net.openhft.lang.io.NativeBytes;
+import net.openhft.lang.io.serialization.impl.VanillaBytesMarshallerFactory;
 import org.junit.Test;
 import sun.nio.ch.DirectBuffer;
 
+import java.io.EOFException;
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.*;
 
 /**
  * User: peter.lawrey Date: 20/09/13 Time: 09:28
  */
 public class VanillaBytesMarshallerTest {
+
     @Test
     public void testObjects() {
         DirectBytes bytes = new DirectStore(1024).bytes();
@@ -59,6 +64,55 @@ public class VanillaBytesMarshallerTest {
         nativeBytes.clear();
         assertEquals(BuySell.BUY, nativeBytes.readObject());
         assertEquals(BuySell.SELL, nativeBytes.readObject());
+    }
+
+    @Test
+    public void testExceptionWithoutCause() {
+        final int capacity = 2 * 1024;
+        final ByteBuffer byteBuffer = ByteBuffer.allocateDirect(capacity);
+        final long addr = ((DirectBuffer) byteBuffer).address();
+
+        final NativeBytes nativeBytes = new NativeBytes(
+                new VanillaBytesMarshallerFactory(), addr, addr + capacity, new AtomicInteger(1));
+
+        Throwable expected = new IOException("io-exception");
+
+        nativeBytes.writeObject(expected);
+        nativeBytes.finish();
+        nativeBytes.clear();
+
+        Throwable actual = nativeBytes.readObject(Throwable.class);
+        assertNotNull(actual);
+        assertNull(actual.getCause());
+
+        assertEquals(expected.getMessage(), actual.getMessage());
+        assertArrayEquals(expected.getStackTrace(), actual.getStackTrace());
+    }
+
+    @Test
+    public void testExceptionWithCause() {
+        final int capacity = 2 * 1024;
+        final ByteBuffer byteBuffer = ByteBuffer.allocateDirect(capacity);
+        final long addr = ((DirectBuffer) byteBuffer).address();
+
+        final NativeBytes nativeBytes = new NativeBytes(
+                new VanillaBytesMarshallerFactory(), addr, addr + capacity, new AtomicInteger(1));
+
+        Throwable expected = new IOException(
+                "io-exception", new EOFException("eof-exception"));
+
+        nativeBytes.writeObject(expected);
+        nativeBytes.finish();
+        nativeBytes.clear();
+
+        Throwable actual = nativeBytes.readObject(Throwable.class);
+        assertNotNull(actual);
+        assertNotNull(actual.getCause());
+
+        assertEquals(expected.getMessage(), actual.getMessage());
+        assertEquals(expected.getCause().getMessage(), actual.getCause().getMessage());
+        assertArrayEquals(expected.getStackTrace(), actual.getStackTrace());
+        assertArrayEquals(expected.getCause().getStackTrace(), actual.getCause().getStackTrace());
     }
 
     enum BuySell {

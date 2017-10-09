@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,10 @@
 
 package net.openhft.lang.io;
 
-import net.openhft.lang.io.serialization.*;
+import net.openhft.lang.io.serialization.BytesMarshallableSerializer;
+import net.openhft.lang.io.serialization.BytesMarshallerFactory;
+import net.openhft.lang.io.serialization.JDKZObjectSerializer;
+import net.openhft.lang.io.serialization.ObjectSerializer;
 import net.openhft.lang.io.serialization.impl.VanillaBytesMarshallerFactory;
 import net.openhft.lang.model.constraints.NotNull;
 import sun.misc.Cleaner;
@@ -27,26 +30,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * @author peter.lawrey
  */
-public class DirectStore implements BytesStore {
+public class DirectStore implements BytesStore, AutoCloseable {
     private final ObjectSerializer objectSerializer;
     private final Cleaner cleaner;
     private final Deallocator deallocator;
+    private final AtomicInteger refCount = new AtomicInteger(1);
     private long address;
     private long size;
-    private final AtomicInteger refCount = new AtomicInteger(1);
 
     public DirectStore(long size) {
         this(new VanillaBytesMarshallerFactory(), size);
     }
 
-    @Deprecated
-    public DirectStore(BytesMarshallerFactory bytesMarshallerFactory, long size) {
+    private DirectStore(BytesMarshallerFactory bytesMarshallerFactory, long size) {
         this(bytesMarshallerFactory, size, true);
     }
 
-    @Deprecated
-    public DirectStore(BytesMarshallerFactory bytesMarshallerFactory, long size, boolean zeroOut) {
-        this(BytesMarshallableSerializer.create(bytesMarshallerFactory, JDKObjectSerializer.INSTANCE), size, zeroOut);
+    private DirectStore(BytesMarshallerFactory bytesMarshallerFactory, long size, boolean zeroOut) {
+        this(BytesMarshallableSerializer.create(bytesMarshallerFactory, JDKZObjectSerializer.INSTANCE), size, zeroOut);
     }
 
     public DirectStore(ObjectSerializer objectSerializer, long size, boolean zeroOut) {
@@ -64,29 +65,33 @@ public class DirectStore implements BytesStore {
         cleaner = Cleaner.create(this, deallocator);
     }
 
+    @NotNull
+    public static DirectStore allocate(long size) {
+        return new DirectStore(new VanillaBytesMarshallerFactory(), size);
+    }
+
+    @NotNull
+    public static DirectStore allocateLazy(long size) {
+        return new DirectStore(new VanillaBytesMarshallerFactory(), size, false);
+    }
+
+    public static BytesStore allocateLazy(long sizeInBytes, ObjectSerializer objectSerializer) {
+        return new DirectStore(objectSerializer, sizeInBytes, false);
+    }
+
     @Override
     public ObjectSerializer objectSerializer() {
         return objectSerializer;
     }
 
-    @NotNull
-    public static DirectStore allocate(long size) {
-        return new DirectStore(null, size);
-    }
-
-    @NotNull
-    public static DirectStore allocateLazy(long size) {
-        return new DirectStore((BytesMarshallerFactory) null, size, false);
-    }
-
     /**
      * Resizes this {@code DirectStore} to the {@code newSize}.
-     * 
-     * <p>If {@code zeroOut} is {@code false}, the memory past the old size is not zeroed out
-     * and will generally be garbage.
-     * 
-     * <p>{@code DirectStore} don't keep track of the child {@code DirectBytes} instances,
-     * so after the resize they might point to the wrong memory. Use at your own risk.
+     *
+     * <p>If {@code zeroOut} is {@code false}, the memory past the old size is not zeroed out and
+     * will generally be garbage.
+     *
+     * <p>{@code DirectStore} don't keep track of the child {@code DirectBytes} instances, so after
+     * the resize they might point to the wrong memory. Use at your own risk.
      *
      * @param newSize new size of this {@code DirectStore}
      * @param zeroOut if the memory past the old size should be zeroed out on increasing resize
@@ -103,9 +108,12 @@ public class DirectStore implements BytesStore {
         size = newSize;
     }
 
+    @SuppressWarnings("ConstantConditions")
     @NotNull
     public DirectBytes bytes() {
-        return new DirectBytes(this, refCount);
+        boolean debug = false;
+        assert debug = true;
+        return debug ? new BoundsCheckingDirectBytes(this, refCount) : new DirectBytes(this, refCount);
     }
 
     @NotNull
@@ -126,19 +134,22 @@ public class DirectStore implements BytesStore {
         return size;
     }
 
-    public static BytesStore allocateLazy(long sizeInBytes, ObjectSerializer objectSerializer) {
-        return new DirectStore(objectSerializer, sizeInBytes, false);
-    }
-
     @Override
     public File file() {
         return null;
     }
 
     /**
-     * Static nested class instead of anonymous because the latter would hold
-     * a strong reference to this DirectStore preventing it from becoming
-     * phantom-reachable.
+     * calls free
+     */
+    @Override
+    public void close()   {
+        free();
+    }
+
+    /**
+     * Static nested class instead of anonymous because the latter would hold a strong reference to
+     * this DirectStore preventing it from becoming phantom-reachable.
      */
     private static class Deallocator implements Runnable {
         private volatile long address;

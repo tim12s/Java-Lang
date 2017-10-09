@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2013 Peter Lawrey
+  ~ Copyright 2016 higherfrequencytrading.com
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
   ~ You may obtain a copy of the License at
   ~
-  ~         http://www.apache.org/licenses/LICENSE-2.0
+  ~     http://www.apache.org/licenses/LICENSE-2.0
   ~
   ~ Unless required by applicable law or agreed to in writing, software
   ~ distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,13 +22,13 @@
     <parent>
         <groupId>net.openhft</groupId>
         <artifactId>root-parent-pom</artifactId>
-        <version>1.1.0</version>
+        <version>1.1.1</version>
         <relativePath/>
     </parent>
 
     <modelVersion>4.0.0</modelVersion>
     <artifactId>Java-Lang</artifactId>
-    <version>6.4.6-SNAPSHOT</version>
+    <version>6.8.x-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <name>Java Lang Parent</name>
@@ -36,10 +36,16 @@
 
     <modules>
         <module>lang</module>
-        <!--<module>lang-sandbox</module>-->
         <module>lang-test</module>
         <module>lang-sandbox</module>
     </modules>
+
+    <scm>
+        <url>scm:git:git@github.com:OpenHFT/Java-Lang.git</url>
+        <connection>scm:git:git@github.com:OpenHFT/Java-Lang.git</connection>
+        <developerConnection>scm:git:git@github.com:OpenHFT/Java-Lang.git</developerConnection>
+        <tag>master</tag>
+    </scm>
 
 </project>
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,9 +27,9 @@ import net.openhft.lang.pool.StringInterner;
  */
 public class StringMarshaller extends ImmutableMarshaller<String>
         implements CompactBytesMarshaller<String> {
+    private static final StringBuilderPool sbp = new StringBuilderPool();
     private final int size;
-    private final StringBuilder reader = new StringBuilder(128);
-    private StringInterner interner;
+    private transient StringInterner interner;
 
     public StringMarshaller(int size) {
         this.size = size;
@@ -43,19 +43,22 @@ public class StringMarshaller extends ImmutableMarshaller<String>
     @Nullable
     @Override
     public String read(@NotNull Bytes bytes) {
-        if (bytes.readUTFΔ(reader))
-            return builderToString();
+        StringBuilder sb = sbp.acquireStringBuilder();
+        if (bytes.readUTFΔ(sb))
+            return builderToString(sb);
         return null;
     }
 
-
-    private String builderToString() {
-        if (interner == null)
+    private String builderToString(StringBuilder reader) {
+        if (interner == null) {
+            if (size == 0)
+                return reader.toString();
             interner = new StringInterner(size);
+        }
         return interner.intern(reader);
     }
 
     public byte code() {
-        return 'S' & 31;
+        return STRING_CODE;
     }
 }

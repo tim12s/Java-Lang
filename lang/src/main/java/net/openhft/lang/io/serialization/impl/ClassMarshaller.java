@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,6 +21,7 @@ import net.openhft.lang.io.Bytes;
 import net.openhft.lang.io.serialization.CompactBytesMarshaller;
 import net.openhft.lang.model.constraints.NotNull;
 import net.openhft.lang.model.constraints.Nullable;
+import net.openhft.lang.pool.StringInterner;
 
 import java.lang.ref.WeakReference;
 import java.math.BigDecimal;
@@ -37,6 +38,7 @@ public class ClassMarshaller extends ImmutableMarshaller<Class>
     private static final int CACHE_SIZE = 1019;
     private static final Map<String, Class> SC_SHORT_NAME = new LinkedHashMap<String, Class>();
     private static final Map<Class, String> CS_SHORT_NAME = new LinkedHashMap<Class, String>();
+    private static final StringBuilderPool sbp = new StringBuilderPool();
 
     static {
         Class[] classes = {Boolean.class, Byte.class, Character.class, Short.class, Integer.class, Long.class, Float.class, Double.class,
@@ -49,7 +51,6 @@ public class ClassMarshaller extends ImmutableMarshaller<Class>
     }
 
     private final ClassLoader classLoader;
-    private final StringBuilder className = new StringBuilder(40);
     @Nullable
     @SuppressWarnings("unchecked")
     private WeakReference<Class>[] classWeakReference = null;
@@ -69,9 +70,9 @@ public class ClassMarshaller extends ImmutableMarshaller<Class>
     @Nullable
     @Override
     public Class read(@NotNull Bytes bytes) {
-        className.setLength(0);
-        bytes.readUTFΔ(className);
-        return load(className);
+        StringBuilder sb = sbp.acquireStringBuilder();
+        bytes.readUTFΔ(sb);
+        return load(sb);
     }
 
     @Nullable
@@ -83,15 +84,16 @@ public class ClassMarshaller extends ImmutableMarshaller<Class>
         WeakReference<Class> ref = classWeakReference[hash];
         if (ref != null) {
             Class clazz = ref.get();
-            if (clazz != null && clazz.getName().equals(name))
+            if (clazz != null && StringInterner.isEqual(clazz.getName(), name))
                 return clazz;
         }
         try {
 
-            Class<?> clazz = SC_SHORT_NAME.get(name.toString());
+            String className = name.toString();
+            Class<?> clazz = SC_SHORT_NAME.get(className);
             if (clazz != null)
                 return clazz;
-            clazz = classLoader.loadClass(name.toString());
+            clazz = classLoader.loadClass(className);
             classWeakReference[hash] = new WeakReference<Class>(clazz);
             return clazz;
         } catch (ClassNotFoundException e) {
@@ -101,6 +103,7 @@ public class ClassMarshaller extends ImmutableMarshaller<Class>
 
     @Override
     public byte code() {
-        return 'C' & 31; // control C
+        return CLASS_CODE; // control C
     }
 }
+    

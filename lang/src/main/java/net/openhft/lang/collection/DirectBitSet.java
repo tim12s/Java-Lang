@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -32,7 +32,7 @@ public interface DirectBitSet extends ReferenceCounted {
     /**
      * Returned if no entry is found
      */
-    public static final long NOT_FOUND = -1L;
+    long NOT_FOUND = -1L;
 
     /**
      * Sets the bit at the specified index to the complement of its
@@ -178,7 +178,6 @@ public interface DirectBitSet extends ReferenceCounted {
      */
     boolean get(long bitIndex);
 
-
     /**
      * Synonym of {@link #get(long)}.
      *
@@ -198,7 +197,6 @@ public interface DirectBitSet extends ReferenceCounted {
      *                                   {@code (index < 0 || index >= size())}
      */
     boolean isClear(long bitIndex);
-
 
     /**
      * Returns the value of the long with the specified long index.
@@ -530,6 +528,14 @@ public interface DirectBitSet extends ReferenceCounted {
     long clearPreviousNContinuousSetBits(long fromIndex, int numberOfBits);
 
     /**
+     * Returns an iteration of <i>set</i> bits in <i>direct</i> order
+     * (from 0 to the end of the bit set).
+     *
+     * @return an iteration of <i>set</i> bits in <i>direct</i> order
+     */
+    Bits setBits();
+
+    /**
      * An iteration of bits in a bit set.
      *
      * <p>Usage idiom: <pre>{@code
@@ -548,12 +554,4 @@ public interface DirectBitSet extends ReferenceCounted {
          */
         long next();
     }
-
-    /**
-     * Returns an iteration of <i>set</i> bits in <i>direct</i> order
-     * (from 0 to the end of the bit set).
-     *
-     * @return an iteration of <i>set</i> bits in <i>direct</i> order
-     */
-    Bits setBits();
 }

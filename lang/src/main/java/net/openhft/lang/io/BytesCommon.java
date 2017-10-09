@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,12 +16,13 @@
 
 package net.openhft.lang.io;
 
-import net.openhft.lang.io.serialization.BytesMarshallerFactory;
 import net.openhft.lang.io.serialization.ObjectSerializer;
 import net.openhft.lang.model.constraints.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 /**
@@ -36,8 +37,9 @@ public interface BytesCommon {
     /**
      * @param position to skip to
      * @return this bytes object back
+     * @throws java.lang.IllegalArgumentException if positions &lt; 0 || position &gt;= limit
      */
-    Bytes position(long position);
+    Bytes position(long position) throws IllegalArgumentException;
 
     /**
      * @return the current limit which must be &gt;= capacity()
@@ -150,7 +152,6 @@ public interface BytesCommon {
      */
     Bytes load();
 
-
     /**
      * Write a portion of the Bytes to an Appendable for printing.
      *
@@ -188,6 +189,28 @@ public interface BytesCommon {
     Bytes slice();
 
     /**
+     * Returns a {@code ByteBuffer} whose content is a shared subsequence of this bytes' content.
+     *
+     * <p>The content of the returned {@code ByteBuffer} will start at this bytes' current
+     * position. Changes to this bytes' content will be visible in the returned {@code ByteBuffer},
+     * and vice versa; this bytes' and the returned {@code ByteBuffer}'s position and limit values
+     * will be independent.
+     *
+     * <p>The returned {@code ByteBuffer}'s position will be zero, its capacity and its limit
+     * will be the number of bytes remaining in this bytes.
+     *
+     * <p>If this bytes object is able to reuse to given {@code toReuse} {@code ByteBuffer}, it will
+     * be reused and returned back from this method, otherwise a new {@code ByteBuffer} instance
+     * is created and returned.
+     *
+     * @param toReuse a {@code ByteBuffer} to reuse
+     * @return a {@code ByteBuffer} view of this {@code Bytes}
+     * @see #slice()
+     * @see ByteBuffer#slice()
+     */
+    ByteBuffer sliceAsByteBuffer(@Nullable ByteBuffer toReuse);
+
+    /**
      * Creates a new bytes whose content is a shared subsequence of this bytes'
      * content.
      * 
@@ -213,4 +236,8 @@ public interface BytesCommon {
 
     @NotNull
     String toDebugString();
+
+    String toDebugString(long limit);
+
+    String toHexString(long limit);
 }

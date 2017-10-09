@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,39 +30,39 @@ public interface JavaBeanInterface {
 
     void unlockRecord();
 
-    void setFlag(boolean flag);
-
     boolean getFlag();
 
-    void setByte(byte b);
+    void setFlag(boolean flag);
 
     byte getByte();
 
-    void setShort(short s);
+    void setByte(byte b);
 
     short getShort();
 
-    void setChar(char ch);
+    void setShort(short s);
 
     char getChar();
 
-    void setInt(int i);
+    void setChar(char ch);
 
     int getInt();
 
-    void setFloat(float f);
+    void setInt(int i);
 
     float getFloat();
 
-    void setLong(long l);
+    void setFloat(float f);
 
     long getLong();
 
-    void setDouble(double d);
+    void setLong(long l);
 
     double getDouble();
 
-    void setString(@MaxSize(8) String s);
+    void setDouble(double d);
 
     String getString();
+
+    void setString(@MaxSize(8) String s);
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 package net.openhft.lang.io;
-
 
 import java.io.Closeable;
 import java.io.File;
@@ -26,37 +25,55 @@ import java.util.Map;
 public class VanillaMappedCache<T> implements Closeable {
     private final boolean cleanOnClose;
     private final Map<T,VanillaMappedBytes> cache;
+    private final FileLifecycleListener fileLifecycleListener;
 
     public VanillaMappedCache() {
-        this(new LinkedHashMap<T, VanillaMappedBytes>(),false);
+        this(new LinkedHashMap<T, VanillaMappedBytes>(), false, FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
     public VanillaMappedCache(final boolean cleanOnClose) {
-        this(new LinkedHashMap<T, VanillaMappedBytes>(), cleanOnClose);
+        this(new LinkedHashMap<T, VanillaMappedBytes>(), cleanOnClose, FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
     public VanillaMappedCache(final int maximumCacheSize, boolean releaseOnRemove) {
         this(maximumCacheSize, releaseOnRemove, false);
     }
-
     public VanillaMappedCache(final int maximumCacheSize, final boolean releaseOnRemove, final boolean cleanOnClose) {
-        this(new LinkedHashMap<T, VanillaMappedBytes>(maximumCacheSize,1.0f,true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<T, VanillaMappedBytes> eldest) {
-                boolean removed = size() >= maximumCacheSize;
-                if (removed && releaseOnRemove) {
-                    eldest.getValue().release();
-                }
-
-                return removed;
-            }
-        },
-        cleanOnClose);
+        this(maximumCacheSize, releaseOnRemove, cleanOnClose, FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
-    private VanillaMappedCache(final Map<T,VanillaMappedBytes> cache, final boolean cleanOnClose) {
+    /**
+     *
+     * @param maximumCacheSize      the maximum number of VanillaMappedBytes to cache
+     * @param releaseOnRemove       release the VanillaMappedBytes when evicted from cache
+     * @param cleanOnClose          clean the VanillaMappedBytes when evicted from cache
+     * @param fileLifecycleListener the file lifecycle
+     */
+    public VanillaMappedCache(
+            final int maximumCacheSize,
+            final boolean releaseOnRemove,
+            final boolean cleanOnClose,
+            FileLifecycleListener fileLifecycleListener) {
+
+        this(new LinkedHashMap<T, VanillaMappedBytes>(maximumCacheSize,1.0f,true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<T, VanillaMappedBytes> eldest) {
+                    boolean removed = size() >= maximumCacheSize;
+                    if (removed && releaseOnRemove) {
+                        eldest.getValue().release();
+                    }
+
+                    return removed;
+                }
+            },
+            cleanOnClose,
+            fileLifecycleListener);
+    }
+
+    private VanillaMappedCache(final Map<T, VanillaMappedBytes> cache, final boolean cleanOnClose, FileLifecycleListener fileLifecycleListener) {
         this.cache = cache;
         this.cleanOnClose = cleanOnClose;
+        this.fileLifecycleListener = fileLifecycleListener;
     }
 
     public VanillaMappedBytes get(T key) {
@@ -80,7 +97,7 @@ public class VanillaMappedCache<T> implements Closeable {
             }
         }
 
-        data = VanillaMappedFile.readWriteBytes(path,size,index);
+        data = VanillaMappedFile.readWriteBytes(path, size, index, fileLifecycleListener);
         this.cache.put(key,data);
 
         return data;
@@ -101,6 +118,7 @@ public class VanillaMappedCache<T> implements Closeable {
                 entry.getValue().cleanup();
                 entry.getValue().close();
                 it.remove();
+
             } else  if(entry.getValue().unmapped()) {
                 entry.getValue().close();
                 it.remove();
@@ -120,5 +138,4 @@ public class VanillaMappedCache<T> implements Closeable {
         }
     }
 }
-
 

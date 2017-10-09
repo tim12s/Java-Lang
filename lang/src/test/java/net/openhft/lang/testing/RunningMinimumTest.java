@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,7 +27,7 @@ import static org.junit.Assert.assertEquals;
  */
 public class RunningMinimumTest {
     @Test
-    public void testSample() throws Exception {
+    public void testSample()   {
         for (int k = 0; k < 1000; k++) {
             for (long delta : new long[]{0, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
                 RunningMinimum rm = new RunningMinimum(50 * 1000);

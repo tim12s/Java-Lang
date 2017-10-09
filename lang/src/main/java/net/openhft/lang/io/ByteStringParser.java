@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -63,10 +63,10 @@ public interface ByteStringParser extends BytesCommon {
      * @param builder to zeroOut and append to.
      * @param tester  to detect when to stop.
      */
-    void parseUTF(@NotNull StringBuilder builder, @NotNull StopCharTester tester) throws BufferUnderflowException;
+    void parseUtf8(@NotNull StringBuilder builder, @NotNull StopCharTester tester) throws BufferUnderflowException;
 
     @NotNull
-    String parseUTF(@NotNull StopCharTester tester) throws BufferUnderflowException;
+    String parseUtf8(@NotNull StopCharTester tester) throws BufferUnderflowException;
 
     @Nullable
     <E extends Enum<E>> E parseEnum(@NotNull Class<E> eClass, @NotNull StopCharTester tester) throws BufferUnderflowException;

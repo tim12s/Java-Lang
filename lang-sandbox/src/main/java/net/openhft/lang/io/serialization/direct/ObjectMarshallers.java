@@ -1,11 +1,13 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2014 Higher Frequency Trading
+ *
+ * http://www.higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -44,6 +46,7 @@ final class ObjectMarshallers {
             if (hasIneligibleFields(fields, eligibleFields)) {
                 WarnAboutIneligibleFields.apply(clazz, fields, eligibleFields);
                 serializationMetadata = DirectSerializationMetadata.extractMetadataForPartialCopy(eligibleFields);
+
             } else {
                 serializationMetadata = DirectSerializationMetadata.extractMetadata(eligibleFields);
             }
@@ -78,6 +81,7 @@ final class ObjectMarshallers {
                     sb.append('\t');
                     sb.append(field.getName());
                     first = false;
+
                 } else {
                     sb.append("\n\t");
                     sb.append(field.getName());

@@ -1,3 +1,21 @@
+/*
+ * Copyright 2014 Higher Frequency Trading
+ *
+ * http://www.higherfrequencytrading.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.openhft.lang.arena;
 
 import net.openhft.lang.io.*;
@@ -8,7 +26,7 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 
 /**
- * Created by peter on 22/06/14.
+ * Created by peter.lawrey on 22/06/14.
  */
 public class MappedArena implements Arena {
     static final byte[] MAGIC = "Arena001".getBytes();
@@ -28,8 +46,6 @@ public class MappedArena implements Arena {
 
     /**
      * The lock consists of the reading/writing mode, writer count, writers waiting, reader count, readers waiting
-     *
-     * @return
      */
     public MappedArena(File file, long minSize, ObjectSerializer objectSerializer, Mode mode) throws IOException {
         this.mode = mode;
@@ -72,22 +88,18 @@ public class MappedArena implements Arena {
 
     @Override
     public void free(int hash, int handle, int sizeInBlocks) {
-
     }
 
     @Override
     public void copyTo(Bytes bytes, int handle) {
-
     }
 
     @Override
     public void copyFrom(int handle, Bytes bytes) {
-
     }
 
     @Override
     public void setBytes(int handle, NativeBytes bytes) throws IllegalStateException {
-
     }
 
     @Override

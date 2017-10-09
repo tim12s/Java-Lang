@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,10 +16,11 @@
 
 package net.openhft.lang.io;
 
-import net.openhft.lang.model.constraints.NotNull;
-import net.openhft.lang.model.constraints.Nullable;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.ObjectInput;
+import java.io.StreamCorruptedException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Map;
@@ -41,10 +42,10 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
      * <li>An I/O error occurs, in which case an <code>IOException</code> other than <code>EOFException</code> is thrown.</li>
      * </ul>
      * <p>
-     * If <code>b</code> is <code>null</code>, a <code>NullPointerException</code> is thrown. If <code>b.length</code>
-     * is zero, then no bytes are read. Otherwise, the first byte read is stored into element <code>b[0]</code>, the
-     * next one into <code>b[1]</code>, and so on. If an exception is thrown from this method, then it may be that some
-     * but not all bytes of <code>b</code> have been updated with data from the input stream.
+     * If <code>bytes</code> is <code>null</code>, a <code>NullPointerException</code> is thrown. If <code>bytes.length</code>
+     * is zero, then no bytes are read. Otherwise, the first byte read is stored into element <code>bytes[0]</code>, the
+     * next one into <code>bytes[1]</code>, and so on. If an exception is thrown from this method, then it may be that some
+     * but not all bytes of <code>bytes</code> have been updated with data from the input stream.
      * </p>
      *
      * @param bytes the buffer into which the data is read.
@@ -63,11 +64,11 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
      * <li>An I/O error occurs, in which case an <code>IOException</code> other than <code>EOFException</code> is thrown. </li>
      * </ul>
      * <p>
-     * If <code>b</code> is <code>null</code>, a <code>NullPointerException</code> is thrown. If <code>off</code> is
+     * If <code>bytes</code> is <code>null</code>, a <code>NullPointerException</code> is thrown. If <code>off</code> is
      * negative, or <code>len</code> is negative, or <code>off+len</code> is greater than the length of the array
-     * <code>b</code>, then an <code>IndexOutOfBoundsException</code> is thrown. If <code>len</code> is zero, then no
-     * bytes are read. Otherwise, the first byte read is stored into element <code>b[off]</code>, the next one into
-     * <code>b[off+1]</code>, and so on. The number of bytes read is, at most, equal to <code>len</code>.
+     * <code>bytes</code>, then an <code>IndexOutOfBoundsException</code> is thrown. If <code>len</code> is zero, then no
+     * bytes are read. Otherwise, the first byte read is stored into element <code>bytes[off]</code>, the next one into
+     * <code>bytes[off+1]</code>, and so on. The number of bytes read is, at most, equal to <code>len</code>.
      * </p>
      *
      * @param bytes the buffer into which the data is read.
@@ -76,6 +77,12 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
      */
     @Override
     void readFully(@NotNull byte[] bytes, int off, int len);
+
+    void readFully(long offset, @NotNull byte[] bytes, int off, int len);
+
+    void readFully(@NotNull char[] data);
+
+    void readFully(@NotNull char[] data, int off, int len);
 
     /**
      * Makes an attempt to skip over <code>n</code> bytes of data from the input stream, discarding the skipped bytes.
@@ -431,6 +438,14 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
     long readLong();
 
     /**
+     * Same as readLong except the remaining() can be less than 8.
+     *
+     * @param offset base
+     * @return long.
+     */
+    long readIncompleteLong(long offset);
+
+    /**
      * Reads eight input bytes and returns a <code>long</code> value. Let <code>a-h</code> be the first through eighth
      * bytes read on big endian machines, and the opposite on little endian machines. The value returned is:
      * <pre> <code>
@@ -745,6 +760,8 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
      */
     boolean readUTFΔ(@NotNull StringBuilder stringBuilder);
 
+    boolean read8bitText(@NotNull StringBuilder stringBuilder) throws StreamCorruptedException;
+
     /**
      * Copy bytes into a ByteBuffer to the minimum of the length <code>remaining()</code> in the ByteBuffer or the
      * Excerpt.
@@ -752,6 +769,15 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
      * @param bb to copy into
      */
     void read(@NotNull ByteBuffer bb);
+
+    /**
+     * Copy bytes into a ByteBuffer to the minimum of the length in the ByteBuffer or the
+     * Excerpt.
+     *
+     * @param bb to copy into
+     * @param length number of bytes to copy
+     */
+    void read(@NotNull ByteBuffer bb, int length);
 
     /**
      * Read a String with <code>readUTFΔ</code> which is converted to an enumerable type. i.e. where there is a one to
@@ -832,7 +858,7 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
     <T> T readInstance(@NotNull Class<T> objClass, T obj);
 
     /**
-     * Reads a byte of data. This method will block if no input is available.
+     * Reads a byte of data. This method is non blocking.
      *
      * @return the byte read, or -1 if the end of the stream is reached.
      */
@@ -889,5 +915,17 @@ public interface RandomDataInput extends ObjectInput, RandomAccess, BytesCommon 
     @Override
     void close();
 
-    boolean startsWith(RandomDataInput keyBytes);
+    boolean startsWith(RandomDataInput input);
+    
+    boolean compare(long offset, RandomDataInput input, long inputOffset, long len);
+
+    <E> E readEnum(long offset, int maxSize, Class<E> eClass);
+
+    /**
+     * From a given bit index, find the next bit with is set.
+     *
+     * @param fromIndex first bit to scan.
+     * @return first bit equals or after it which is set.
+     */
+    long nextSetBit(long fromIndex);
 }

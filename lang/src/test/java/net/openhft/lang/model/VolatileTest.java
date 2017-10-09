@@ -1,25 +1,38 @@
+/*
+ * Copyright 2016 higherfrequencytrading.com
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package net.openhft.lang.model;
 
 import net.openhft.compiler.CachedCompiler;
 import net.openhft.lang.io.ByteBufferBytes;
 import net.openhft.lang.io.Bytes;
 import net.openhft.lang.model.constraints.MaxSize;
-import net.openhft.lang.values.IntValue;
-import net.openhft.lang.values.LongValue;
 import org.junit.Test;
 
 import java.nio.ByteBuffer;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 /**
  * Created by daniel on 11/06/2014.
  */
 public class VolatileTest {
     @Test
-    public void testGenerateJavaCode() throws Exception {
+    public void testGenerateJavaCode() throws ClassNotFoundException, IllegalAccessException, InstantiationException {
         DataValueGenerator dvg = new DataValueGenerator();
        // dvg.setDumpCode(true);
 
@@ -64,7 +77,7 @@ public class VolatileTest {
             CachedCompiler cc = new CachedCompiler(null, null);
             Class aClass = cc.loadFromJava(GoodInterface.class.getName() + "$$Native", actual);
             GoodInterface jbi = (GoodInterface) aClass.asSubclass(GoodInterface.class).newInstance();
-            Bytes bytes = new ByteBufferBytes(ByteBuffer.allocate(64));
+            Bytes bytes = ByteBufferBytes.wrap(ByteBuffer.allocate(64));
             ((Byteable) jbi).bytes(bytes, 0L);
 
             jbi.setOrderedY(5);
@@ -82,26 +95,32 @@ public class VolatileTest {
             e.printStackTrace();
             assertFalse("Throws an IllegalArgumentException", true);
         }
-
     }
 
     public interface BadInterface1{
-        public int getX();
-        public void setOrderedX(int x);
+        int getX();
+
+        void setOrderedX(int x);
     }
 
     public interface BadInterface2{
-        public int getVolatileX();
-        public void setX(int x);
+        int getVolatileX();
+
+        void setX(int x);
     }
 
     public interface GoodInterface{
-        public int getX();
-        public void setX(int x);
-        public int getVolatileY();
-        public void setOrderedY(int y);
-        public int getY();
-        public void setY(int y);
+        int getX();
+
+        void setX(int x);
+
+        int getVolatileY();
+
+        void setOrderedY(int y);
+
+        int getY();
+
+        void setY(int y);
 
         void setOrderedIntAt(@MaxSize(4) int idx, int i);
         int getVolatileIntAt(int idx);

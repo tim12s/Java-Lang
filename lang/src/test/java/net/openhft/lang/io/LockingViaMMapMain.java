@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -45,8 +45,7 @@ public class LockingViaMMapMain {
         File tmpFile = new File(System.getProperty("java.io.tmpdir"), "lock-test.dat");
         FileChannel fc = new RandomAccessFile(tmpFile, "rw").getChannel();
         MappedByteBuffer mbb = fc.map(FileChannel.MapMode.READ_WRITE, 0, RECORDS * RECORD_SIZE);
-        ByteBufferBytes bytes = new ByteBufferBytes(mbb);
-        bytes.setCurrentThread();
+        Bytes bytes = ByteBufferBytes.wrap(mbb);
 
         long start = 0;
         for (int i = -WARMUP / RECORDS; i < (RUNS + RECORDS - 1) / RECORDS; i++) {
@@ -61,6 +60,7 @@ public class LockingViaMMapMain {
                     if (t == 0)
                         if (i >= 0) {
                             throw new AssertionError("Didn't toggle in time !??");
+
                         } else {
                             Thread.sleep(200);
                         }

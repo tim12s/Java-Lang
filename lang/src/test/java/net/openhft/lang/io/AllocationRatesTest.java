@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,7 @@ import org.junit.Test;
 import java.nio.ByteBuffer;
 
 /**
- * User: peter Date: 24/12/13 Time: 19:43
+ * User: peter.lawrey Date: 24/12/13 Time: 19:43
  */
 /*
 buffers 128 KB took an average of 18,441 ns for heap ByteBuffer, 33,683 ns for direct ByteBuffer and 1,761 for DirectStore
@@ -31,9 +31,9 @@ buffers 128 KB took an average of 10,768 ns for heap ByteBuffer, 21,444 ns for d
 buffers 128 KB took an average of 8,739 ns for heap ByteBuffer, 22,684 ns for direct ByteBuffer and 890 for DirectStore
  */
 public class AllocationRatesTest {
+    public static final int BATCH = 10;
     static final int BUFFER_SIZE = 128 * 1024;
     static final int ALLOCATIONS = 10000;
-    public static final int BATCH = 10;
 
     @Test
     public void compareAllocationRates() {

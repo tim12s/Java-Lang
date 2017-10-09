@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -51,6 +51,14 @@ public class MutableDecimal extends Number implements Comparable<MutableDecimal>
 
     public MutableDecimal(double d, int precision) {
         set(d, precision);
+    }
+
+    private static double tens(int scale) {
+        return scale < TENS.length ? TENS[scale] : Math.pow(10, scale);
+    }
+
+    private static int longCompareTo(long value, long ovalue) {
+        return value < ovalue ? -1 : value > ovalue ? +1 : 0;
     }
 
     void set(double d, int precision) {
@@ -132,6 +140,7 @@ public class MutableDecimal extends Number implements Comparable<MutableDecimal>
             if (digit < 0) {
                 digit = 8;
                 v = (v >>> 1) / 5;
+
             } else {
                 v /= 10;
             }
@@ -177,10 +186,6 @@ public class MutableDecimal extends Number implements Comparable<MutableDecimal>
         return scale <= 0 ? value * tens(-scale) : value / tens(scale);
     }
 
-    private static double tens(int scale) {
-        return scale < TENS.length ? TENS[scale] : Math.pow(10, scale);
-    }
-
     @Override
     public int compareTo(@NotNull MutableDecimal o) {
         long value = this.value, ovalue = o.value;
@@ -194,9 +199,5 @@ public class MutableDecimal extends Number implements Comparable<MutableDecimal>
         if (d > od + err) return +1;
         // fallback.
         return BigDecimal.valueOf(value, scale).compareTo(BigDecimal.valueOf(ovalue, o.scale()));
-    }
-
-    private static int longCompareTo(long value, long ovalue) {
-        return value < ovalue ? -1 : value > ovalue ? +1 : 0;
     }
 }

@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 Higher Frequency Trading
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,17 +20,39 @@ import net.openhft.lang.io.AbstractBytes;
 import net.openhft.lang.io.Bytes;
 import net.openhft.lang.io.NativeBytes;
 import net.openhft.lang.io.serialization.impl.NoMarshaller;
+import net.openhft.lang.io.serialization.impl.StringBuilderPool;
+import net.openhft.lang.io.serialization.impl.VanillaBytesMarshallerFactory;
 import net.openhft.lang.model.constraints.NotNull;
+import net.openhft.lang.pool.EnumInterner;
 
 import java.io.Externalizable;
 import java.io.IOException;
 
+/**
+ * An extension of built-in Java serialization, featuring special treatment of {@link
+ * BytesMarshallable} objects, compact {@link String} encoding and support of pluggable custom
+ * serializers for arbitrary classes.
+ *
+ * <p>{@code BytesMarshallableSerializer} could benefit if objects (either top-level serialized or
+ * nested fields) implement {@link BytesMarshallable} interface the same way as built-in
+ * serialization benefit if objects implement {@link Externalizable} (of cause, {@code
+ * BytesMarshallableSerializer} supports {@code Externalizable} too).
+ *
+ * <p>{@link CharSequence}s, including {@code String}s (either top-level serialized or nested
+ * fields) are serialized in UTF-8 encoding.
+ *
+ * <p>Custom per-class serializers are held by {@link BytesMarshallerFactory}, which could be
+ * passed via constructor or static factory {@link #create create()} method.
+ *
+ * @see #create(BytesMarshallerFactory, ObjectSerializer)
+ */
 public class BytesMarshallableSerializer implements ObjectSerializer {
     private static final long serialVersionUID = 0L;
 
     private static final byte NULL = 'N';
     private static final byte ENUMED = 'E';
     private static final byte SERIALIZED = 'S';
+    private static final StringBuilderPool SBP = new StringBuilderPool();
 
     private final BytesMarshallerFactory bytesMarshallerFactory;
     private final ObjectSerializer objectSerializer;
@@ -38,6 +60,20 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
     protected BytesMarshallableSerializer(BytesMarshallerFactory bytesMarshallerFactory, ObjectSerializer objectSerializer) {
         this.bytesMarshallerFactory = bytesMarshallerFactory;
         this.objectSerializer = objectSerializer;
+    }
+
+    static boolean autoGenerateMarshaller(Object obj) {
+        return (obj instanceof Comparable && obj.getClass().getPackage().getName().startsWith("java"))
+                || obj instanceof Externalizable
+                || obj instanceof BytesMarshallable;
+    }
+
+    public static ObjectSerializer create() {
+        return create(new VanillaBytesMarshallerFactory(), JDKZObjectSerializer.INSTANCE);
+    }
+
+    public static ObjectSerializer create(BytesMarshallerFactory bytesMarshallerFactory, ObjectSerializer instance) {
+        return bytesMarshallerFactory == null ? instance : new BytesMarshallableSerializer(bytesMarshallerFactory, instance);
     }
 
     @Override
@@ -50,14 +86,24 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
             if (BytesMarshallable.class.isAssignableFrom(expectedClass)) {
                 ((BytesMarshallable) object).writeMarshallable(bytes);
                 return;
+
             } else if (Externalizable.class.isAssignableFrom(expectedClass)) {
                 ((Externalizable) object).writeExternal(bytes);
                 return;
+
             } else if (CharSequence.class.isAssignableFrom(expectedClass)) {
                 bytes.writeUTFΔ((CharSequence) object);
                 return;
+
+            } else if (Enum.class.isAssignableFrom(expectedClass)) {
+                bytes.write8bitText(object.toString());
+                return;
             }
         }
+        writeSerializable2(bytes, object);
+    }
+
+    private void writeSerializable2(Bytes bytes, Object object) throws IOException {
         Class<?> clazz = object.getClass();
         BytesMarshaller em = bytesMarshallerFactory.acquireMarshaller(clazz, false);
         if (em == NoMarshaller.INSTANCE && autoGenerateMarshaller(object))
@@ -70,7 +116,7 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
                 return;
             }
             bytes.writeByte(ENUMED);
-            bytes.writeEnum(clazz);
+            this.writeSerializable(bytes, clazz, Class.class);
             em.write(bytes, object);
             return;
         }
@@ -79,22 +125,23 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
         objectSerializer.writeSerializable(bytes, object, null);
     }
 
-    static boolean autoGenerateMarshaller(Object obj) {
-        return (obj instanceof Comparable && obj.getClass().getPackage().getName().startsWith("java"))
-                || obj instanceof Externalizable
-                || obj instanceof BytesMarshallable;
-    }
-
     @Override
     public <T> T readSerializable(@NotNull Bytes bytes, Class<T> expectedClass, T object) throws IOException, ClassNotFoundException {
         if (expectedClass != null) {
             try {
                 if (BytesMarshallable.class.isAssignableFrom(expectedClass)) {
                     return readBytesMarshallable(bytes, expectedClass, object);
+
                 } else if (Externalizable.class.isAssignableFrom(expectedClass)) {
                     return readExternalizable(bytes, expectedClass, object);
+
                 } else if (CharSequence.class.isAssignableFrom(expectedClass)) {
                     return readCharSequence(bytes, object);
+
+                } else if (Enum.class.isAssignableFrom(expectedClass)) {
+                    StringBuilder sb = SBP.acquireStringBuilder();
+                    bytes.read8bitText(sb);
+                    return (T) EnumInterner.intern((Class<Enum>) expectedClass, sb);
                 }
             } catch (InstantiationException e) {
                 throw new IOException("Unable to create " + expectedClass, e);
@@ -106,13 +153,15 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
             case NULL:
                 return null;
             case ENUMED: {
-                Class clazz = bytes.readEnum(Class.class);
+                Class clazz = this.readSerializable(bytes, Class.class, null);
                 assert clazz != null;
-                return (T) bytesMarshallerFactory.acquireMarshaller(clazz, true).read(bytes);
+                return (T) bytesMarshallerFactory.acquireMarshaller(clazz, true).read(bytes, object);
             }
+
             case SERIALIZED: {
                 return objectSerializer.readSerializable(bytes, expectedClass, object);
             }
+
             default:
                 BytesMarshaller<Object> m = bytesMarshallerFactory.getMarshaller((byte) type);
                 if (m == null)
@@ -125,6 +174,7 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
         if (object instanceof StringBuilder) {
             bytes.readUTFΔ(((StringBuilder) object));
             return object;
+
         } else {
             return (T) bytes.readUTFΔ();
         }
@@ -142,9 +192,5 @@ public class BytesMarshallableSerializer implements ObjectSerializer {
             object = (T) NativeBytes.UNSAFE.allocateInstance(expectedClass);
         ((BytesMarshallable) object).readMarshallable(bytes);
         return object;
-    }
-
-    public static ObjectSerializer create(BytesMarshallerFactory bytesMarshallerFactory, ObjectSerializer instance) {
-        return bytesMarshallerFactory == null ? instance : new BytesMarshallableSerializer(bytesMarshallerFactory, instance);
     }
 }

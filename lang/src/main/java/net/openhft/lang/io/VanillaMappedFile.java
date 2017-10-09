@@ -1,11 +1,11 @@
 /*
- * Copyright 2014 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 package net.openhft.lang.io;
+
+import net.openhft.lang.io.FileLifecycleListener.EventType;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,62 +34,26 @@ import java.nio.channels.FileChannel;
 public class VanillaMappedFile implements VanillaMappedResource {
 
     private final File path;
-    private final FileChannel channel;
+    private final FileChannel fileChannel;
     private final VanillaMappedMode mode;
     private final long size;
+    private final FileLifecycleListener fileLifecycleListener;
 
     public VanillaMappedFile(final File path, VanillaMappedMode mode) throws IOException {
-        this(path, mode, -1);
+        this(path, mode, -1, FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
-    public VanillaMappedFile(final File path, VanillaMappedMode mode, long size) throws IOException {
+    public VanillaMappedFile(final File path, VanillaMappedMode mode, long size,
+                             FileLifecycleListener fileLifecycleListener) throws IOException {
         this.path = path;
         this.mode = mode;
         this.size = size;
-        this.channel = fileChannel(path,mode,this.size);
+        this.fileChannel = fileChannel(path, mode, this.size, fileLifecycleListener);
+        this.fileLifecycleListener = fileLifecycleListener;
     }
 
-    public VanillaMappedBytes bytes(long address, long size) throws IOException {
-        return new VanillaMappedBytes(map(address,size), -1, null);
-    }
-
-    public VanillaMappedBytes bytes(long address, long size, long index) throws IOException {
-        return new VanillaMappedBytes(map(address,size), index, null);
-    }
-
-    @Override
-    public String path() {
-        return this.path.getAbsolutePath();
-    }
-
-    @Override
-    public long size() {
-        try {
-            return this.channel.size();
-        } catch (IOException e) {
-            return 0;
-        }
-    }
-
-    @Override
-    public synchronized void close() throws IOException {
-        if(this.channel.isOpen()) {
-            this.channel.close();
-        }
-    }
-
-    // *************************************************************************
-    // Helpers
-    // *************************************************************************
-
-    private synchronized MappedByteBuffer map(long address, long size) throws IOException {
-        MappedByteBuffer buffer = this.channel.map(this.mode.mapValue(),address,size);
-        buffer.order(ByteOrder.nativeOrder());
-
-        return buffer;
-    }
-
-    private static FileChannel fileChannel(final File path, VanillaMappedMode mapMode, long size) throws IOException {
+    private static FileChannel fileChannel(final File path, VanillaMappedMode mapMode, long size, FileLifecycleListener fileLifecycleListener) throws IOException {
+        long start = System.nanoTime();
         FileChannel fileChannel = null;
         try {
             final RandomAccessFile raf = new RandomAccessFile(path, mapMode.stringValue());
@@ -100,17 +66,18 @@ public class VanillaMappedFile implements VanillaMappedResource {
             }
 
             fileChannel = raf.getChannel();
-            //fileChannel.force(true);
         } catch (Exception e) {
             throw wrap(e);
         }
 
+        fileLifecycleListener.onEvent(EventType.NEW, path, System.nanoTime() - start);
         return fileChannel;
     }
 
     private static IOException wrap(Throwable throwable) {
         if(throwable instanceof InvocationTargetException) {
             throwable = throwable.getCause();
+
         } else if(throwable instanceof IOException) {
             return (IOException)throwable;
         }
@@ -123,15 +90,21 @@ public class VanillaMappedFile implements VanillaMappedResource {
     }
 
     public static VanillaMappedFile readWrite(final File path, long size) throws IOException {
-        return new VanillaMappedFile(path,VanillaMappedMode.RW,size);
+        return new VanillaMappedFile(path, VanillaMappedMode.RW, size,
+                FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
     public static VanillaMappedFile readOnly(final File path) throws IOException {
         return new VanillaMappedFile(path,VanillaMappedMode.RO);
     }
 
+    // *************************************************************************
+    // Helpers
+    // *************************************************************************
+
     public static VanillaMappedFile readOnly(final File path, long size) throws IOException {
-        return new VanillaMappedFile(path,VanillaMappedMode.RO,size);
+        return new VanillaMappedFile(path, VanillaMappedMode.RO, size,
+                FileLifecycleListener.FileLifecycleListeners.IGNORE);
     }
 
     public static VanillaMappedBytes readWriteBytes(final File path, long size) throws IOException {
@@ -139,7 +112,50 @@ public class VanillaMappedFile implements VanillaMappedResource {
     }
 
     public static VanillaMappedBytes readWriteBytes(final File path, long size, long index) throws IOException {
-        VanillaMappedFile vmf = new VanillaMappedFile(path,VanillaMappedMode.RW);
-        return new VanillaMappedBytes(vmf.map(0,size), index, vmf.channel);
+        return readWriteBytes(path, size, index, FileLifecycleListener.FileLifecycleListeners.IGNORE);
+    }
+
+    public static VanillaMappedBytes readWriteBytes(final File path, long size, long index, FileLifecycleListener fileLifecycleListener) throws IOException {
+        VanillaMappedFile vmf = new VanillaMappedFile(path, VanillaMappedMode.RW, -1, fileLifecycleListener);
+        return new VanillaMappedBytes(path, vmf.map(0,size), index, vmf.fileChannel, fileLifecycleListener);
+    }
+
+    public VanillaMappedBytes bytes(long address, long size) throws IOException {
+        return new VanillaMappedBytes(this.path, map(address, size), -1, null, this.fileLifecycleListener);
+    }
+
+    public VanillaMappedBytes bytes(long address, long size, long index) throws IOException {
+        return new VanillaMappedBytes(this.path, map(address, size), index, null, this.fileLifecycleListener);
+    }
+
+    @Override
+    public String path() {
+        return this.path.getAbsolutePath();
+    }
+
+    @Override
+    public long size() {
+        try {
+            return this.fileChannel.size();
+        } catch (IOException e) {
+            return 0;
+        }
+    }
+
+    @Override
+    public synchronized void close() throws IOException {
+        if (this.fileChannel.isOpen()) {
+            long start = System.nanoTime();
+            this.fileChannel.close();
+            this.fileLifecycleListener.onEvent(EventType.CLOSE, this.path, System.nanoTime() - start);
+        }
+    }
+
+    private synchronized MappedByteBuffer map(long address, long size) throws IOException {
+        long start = System.nanoTime();
+        MappedByteBuffer buffer = this.fileChannel.map(this.mode.mapValue(), address, size);
+        buffer.order(ByteOrder.nativeOrder());
+        fileLifecycleListener.onEvent(EventType.MMAP, path, System.nanoTime() - start);
+        return buffer;
     }
 }

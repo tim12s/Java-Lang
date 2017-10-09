@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,7 +16,7 @@
 
 package net.openhft.lang.io;
 
-import net.openhft.affinity.AffinitySupport;
+import net.openhft.affinity.Affinity;
 
 import java.io.File;
 import java.io.IOException;
@@ -46,14 +46,13 @@ public class LockingViaMMapWithThreadIdMain {
     public static void main(String... args) throws IOException, InterruptedException {
         boolean toggleTo = Boolean.parseBoolean(args[0]);
         File tmpFile = new File(System.getProperty("java.io.tmpdir"), "lock-test-tid.dat");
-        FileChannel fc = new RandomAccessFile(tmpFile, "rw").getChannel();
+        RandomAccessFile randomAccessFile = new RandomAccessFile(tmpFile, "rw");
+        FileChannel fc = randomAccessFile.getChannel();
         MappedByteBuffer mbb = fc.map(FileChannel.MapMode.READ_WRITE, 0, RECORDS * RECORD_SIZE);
         // set the the Thread.getId() to match the process thread id
         // this way the getId() can be used across processes..
-        AffinitySupport.setThreadId();
-        AffinitySupport.setAffinity(toggleTo ? 1 << 3 : 1 << 2);
-        ByteBufferBytes bytes = new ByteBufferBytes(mbb);
-        bytes.setCurrentThread();
+        Affinity.setAffinity(toggleTo ? 1 << 3 : 1 << 2);
+        Bytes bytes = ByteBufferBytes.wrap(mbb);
 
         long start = 0;
         for (int i = -WARMUP / RECORDS; i < (RUNS + RECORDS - 1) / RECORDS; i++) {
@@ -68,6 +67,7 @@ public class LockingViaMMapWithThreadIdMain {
                     if (t == 0)
                         if (i >= 0) {
                             throw new AssertionError("Didn't toggle in time !??");
+
                         } else {
                             Thread.sleep(200);
                         }
@@ -98,6 +98,7 @@ public class LockingViaMMapWithThreadIdMain {
         System.out.printf("Toggled %,d times with an average delay of %,d ns%n",
                 toggles, time / toggles);
         fc.close();
+        randomAccessFile.close();
         tmpFile.deleteOnExit();
     }
 }

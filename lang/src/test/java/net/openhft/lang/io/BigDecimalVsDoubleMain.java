@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,6 +24,10 @@ public class BigDecimalVsDoubleMain {
     public static final String[] NUMBER = {"1000000", "1.1", "1.23456", "12345.67890"};
     public static final Bytes[] IN_BYTES = new Bytes[NUMBER.length];
     public static final Bytes OUT_BYTES;
+    static int count = 0;
+    static volatile double saved;
+    static volatile String savedStr;
+    static volatile BigDecimal savedBD;
 
     static {
         DirectStore store = new DirectStore((NUMBER.length + 1) * 16);
@@ -34,10 +38,8 @@ public class BigDecimalVsDoubleMain {
         OUT_BYTES = store.bytes(0, 16);
     }
 
-    static int count = 0;
-
     public static void main(String[] args) throws InterruptedException {
-        ByteBufferBytes x = new ByteBufferBytes(ByteBuffer.allocateDirect(16));
+        Bytes x = ByteBufferBytes.wrap(ByteBuffer.allocateDirect(16));
         x.writeUTFΔ("Hello World");
         System.out.println(x);
         int runs = 5000;
@@ -77,9 +79,6 @@ public class BigDecimalVsDoubleMain {
         }
     }
 
-    static volatile double saved;
-    static volatile String savedStr;
-
     public static long testDoubleWithString() {
         long start = System.nanoTime();
         saved = Double.parseDouble(NUMBER[count]);
@@ -98,8 +97,6 @@ public class BigDecimalVsDoubleMain {
 
         return System.nanoTime() - start;
     }
-
-    static volatile BigDecimal savedBD;
 
     public static long testBigDecimalWithString() {
         long start = System.nanoTime();

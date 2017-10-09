@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,7 +17,7 @@
 package net.openhft.lang.io;
 
 import net.openhft.lang.io.serialization.BytesMarshallableSerializer;
-import net.openhft.lang.io.serialization.JDKObjectSerializer;
+import net.openhft.lang.io.serialization.JDKZObjectSerializer;
 import net.openhft.lang.io.serialization.impl.VanillaBytesMarshallerFactory;
 import net.openhft.lang.model.constraints.NotNull;
 import sun.nio.ch.DirectBuffer;
@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * @author peter.lawrey
  */
-public class ByteBufferBytes extends AbstractBytes {
+public class ByteBufferBytes extends AbstractBytes implements IByteBufferBytes {
     private final ByteBuffer buffer;
     private final int start;
     private final int capacity;
@@ -39,18 +39,46 @@ public class ByteBufferBytes extends AbstractBytes {
     private int limit;
     private AtomicBoolean barrier;
 
+    /**
+     * Use the ByteBufferBytes.wrap(ByteBuffer) as DirectByteBuffer more efficient
+     */
+    @Deprecated
     public ByteBufferBytes(ByteBuffer buffer) {
         this(buffer, 0, buffer.capacity());
     }
 
+    /**
+     * Use the ByteBufferBytes.wrap(ByteBuffer) as DirectByteBuffer more efficient
+     *
+     * @param buffer the buffer to populate
+     * @param start  start of buffer
+     *               * @param capacity len of buffer
+     */
+    @Deprecated
     public ByteBufferBytes(ByteBuffer buffer, int start, int capacity) {
-        super(BytesMarshallableSerializer.create(new VanillaBytesMarshallerFactory(), JDKObjectSerializer.INSTANCE), new AtomicInteger(1));
+        super(BytesMarshallableSerializer.create(new VanillaBytesMarshallerFactory(), JDKZObjectSerializer.INSTANCE), new AtomicInteger(1));
         // We should set order to native, because compare-and-swap operations
         // end up with native ops. Bytes interfaces handles only native order.
         buffer.order(ByteOrder.nativeOrder());
         this.buffer = buffer;
         this.start = position = start;
-        this.capacity = limit = (capacity+start);
+        this.capacity = limit = (capacity + start);
+    }
+
+    public static IByteBufferBytes wrap(ByteBuffer buffer) {
+        if (buffer instanceof DirectBuffer) {
+            return new DirectByteBufferBytes(buffer);
+        }
+
+        return new ByteBufferBytes(buffer.slice());
+    }
+
+    public static IByteBufferBytes wrap(ByteBuffer buffer, int start, int capacity) {
+        if (buffer instanceof DirectBuffer) {
+            return new DirectByteBufferBytes(buffer, start, capacity);
+        }
+
+        return new ByteBufferBytes(buffer.slice(), start, capacity);
     }
 
     @Override
@@ -131,6 +159,12 @@ public class ByteBufferBytes extends AbstractBytes {
         return this;
     }
 
+    @Override
+    public Bytes zeroOut(long start, long end, boolean ifNotZero) {
+        // ByteBuffers are allocated in memory eagerly.
+        return zeroOut(start, end);
+    }
+
     public ByteBuffer buffer() {
         return buffer;
     }
@@ -147,8 +181,7 @@ public class ByteBufferBytes extends AbstractBytes {
 
     @Override
     public int read(@NotNull byte[] bytes, int off, int len) {
-        if (len < 0 || off < 0 || off + len > bytes.length)
-            throw new IllegalArgumentException();
+        checkArrayOffs(bytes.length, off, len);
         long left = remaining();
         if (left <= 0) return -1;
         int len2 = (int) Math.min(left, len);
@@ -174,13 +207,32 @@ public class ByteBufferBytes extends AbstractBytes {
 
     @Override
     public void readFully(@NotNull byte[] b, int off, int len) {
-        if (len < 0 || off < 0 || off + len > b.length)
-            throw new IllegalArgumentException();
+        checkArrayOffs(b.length, off, len);
         long left = remaining();
         if (left < len)
             throw new IllegalStateException(new EOFException());
         for (int i = 0; i < len; i++)
             b[off + i] = readByte();
+    }
+
+    @Override
+    public void readFully(@NotNull char[] data, int off, int len) {
+        checkArrayOffs(data.length, off, len);
+        long left = remaining();
+        if (left < len * 2L)
+            throw new IllegalStateException(new EOFException());
+        for (int i = 0; i < len; i++)
+            data[off + i] = readChar();
+    }
+
+    @Override
+    public void readFully(long offset, byte[] bytes, int off, int len) {
+        checkArrayOffs(bytes.length, off, len);
+        long left = remaining();
+        if (left < len)
+            throw new IllegalStateException(new EOFException());
+        for (int i = 0; i < len; i++)
+            bytes[off + i] = readByte(offset + i);
     }
 
     @Override
@@ -337,6 +389,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 2 <= capacity) {
             buffer.putShort(position, (short) v);
             position += 2;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -356,6 +409,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 2 <= capacity) {
             buffer.putChar(position, (char) v);
             position += 2;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -375,6 +429,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 4 <= capacity) {
             buffer.putInt(position, v);
             position += 4;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -413,6 +468,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 8 <= capacity) {
             buffer.putLong(position, v);
             position += 8;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -451,6 +507,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 4 <= capacity) {
             buffer.putFloat(position, v);
             position += 4;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -470,6 +527,7 @@ public class ByteBufferBytes extends AbstractBytes {
         if (position + 8 <= capacity) {
             buffer.putDouble(position, v);
             position += 8;
+
         } else {
             throw new IndexOutOfBoundsException();
         }
@@ -502,7 +560,10 @@ public class ByteBufferBytes extends AbstractBytes {
     @Override
     public ByteBufferBytes position(long position) {
         if (start + position > Integer.MAX_VALUE)
-            throw new IndexOutOfBoundsException("Position to large");
+            throw new IllegalArgumentException("Position to large");
+        if (position < 0)
+            throw new IllegalArgumentException("Position to small");
+
         this.position = (int) (start + position);
         return this;
     }
@@ -536,8 +597,9 @@ public class ByteBufferBytes extends AbstractBytes {
 
     @Override
     public void checkEndOfBuffer() throws IndexOutOfBoundsException {
-        if (position < start || position > capacity)
+        if (position < start || position > limit()) {
             throw new IndexOutOfBoundsException();
+        }
     }
 
     @Override
@@ -556,5 +618,4 @@ public class ByteBufferBytes extends AbstractBytes {
     public void alignPositionAddr(int powerOf2) {
         position = (position + powerOf2 - 1) & ~(powerOf2 - 1);
     }
-
 }

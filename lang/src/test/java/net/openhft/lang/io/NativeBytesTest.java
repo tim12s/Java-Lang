@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@
 package net.openhft.lang.io;
 
 import net.openhft.lang.Maths;
+import net.openhft.lang.model.Byteable;
 import net.openhft.lang.thread.NamedThreadFactory;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,6 +35,8 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 import static net.openhft.lang.io.StopCharTesters.*;
+import static net.openhft.lang.model.DataValueClasses.newDirectInstance;
+import static net.openhft.lang.model.DataValueClasses.newDirectReference;
 import static org.junit.Assert.*;
 
 /**
@@ -53,7 +56,7 @@ public class NativeBytesTest {
     }
 
     @Test
-    public void testLongHash() throws Exception {
+    public void testLongHash()   {
         byte[] bytes = {1, 2, 3, 4, 5, 6, 7, 8};
         long h = NativeBytes.longHash(bytes, 0, bytes.length);
         assertFalse(h == 0);
@@ -64,7 +67,7 @@ public class NativeBytesTest {
     }
 
     @Test
-    public void testRead() throws Exception {
+    public void testRead()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.writeByte(i, i);
         bytes.position(0);
@@ -73,11 +76,10 @@ public class NativeBytesTest {
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
             assertEquals((byte) i, bytes.readByte(i));
         }
-
     }
 
     @Test
-    public void testReadFully() throws Exception {
+    public void testReadFully()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         bytes.position(0);
@@ -88,16 +90,15 @@ public class NativeBytesTest {
     }
 
     @Test
-    public void testCompareAndSetLong() throws Exception {
+    public void testCompareAndSetLong()   {
         assertTrue(bytes.compareAndSwapLong(0, 0, 1));
         assertFalse(bytes.compareAndSwapLong(0, 0, 1));
         assertTrue(bytes.compareAndSwapLong(8, 0, 1));
         assertTrue(bytes.compareAndSwapLong(0, 1, 2));
-
     }
 
     @Test
-    public void testPosition() throws Exception {
+    public void testPosition()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
@@ -107,25 +108,25 @@ public class NativeBytesTest {
     }
 
     @Test
-    public void testCapacity() throws Exception {
+    public void testCapacity()   {
         assertEquals(SIZE, bytes.capacity());
-        assertEquals(10, new NativeBytes(0, 10).capacity());
+        assertEquals(10, new NativeBytes(100000, 100010).capacity());
     }
 
     @Test
-    public void testRemaining() throws Exception {
+    public void testRemaining()   {
         assertEquals(SIZE, bytes.remaining());
         bytes.position(10);
         assertEquals(SIZE - 10, bytes.remaining());
     }
 
     @Test
-    public void testByteOrder() throws Exception {
+    public void testByteOrder()   {
         assertEquals(ByteOrder.nativeOrder(), bytes.byteOrder());
     }
 
     @Test
-    public void testCheckEndOfBuffer() throws Exception {
+    public void testCheckEndOfBuffer()   {
         bytes.checkEndOfBuffer();
 
         try {
@@ -195,7 +196,7 @@ public class NativeBytesTest {
         bytes.position(0);
         bytes.append(d, precision).append(' ');
         bytes.position(0);
-        String text = bytes.parseUTF(SPACE_STOP);
+        String text = bytes.parseUtf8(SPACE_STOP);
         bytes.position(0);
         assertEquals(0, bytes.position());
         double d2 = bytes.parseDouble();
@@ -274,17 +275,17 @@ public class NativeBytesTest {
         bytes.append('\t');
         bytes.flip();
         for (String word : words) {
-            assertEquals(word, bytes.parseUTF(CONTROL_STOP));
+            assertEquals(word, bytes.parseUtf8(CONTROL_STOP));
         }
-        assertEquals("", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("", bytes.parseUtf8(CONTROL_STOP));
 
         bytes.position(0);
         StringBuilder sb = new StringBuilder();
         for (String word : words) {
-            bytes.parseUTF(sb, CONTROL_STOP);
+            bytes.parseUtf8(sb, CONTROL_STOP);
             assertEquals(word, sb.toString());
         }
-        bytes.parseUTF(sb, CONTROL_STOP);
+        bytes.parseUtf8(sb, CONTROL_STOP);
         assertEquals("", sb.toString());
 
         bytes.position(0);
@@ -306,7 +307,6 @@ public class NativeBytesTest {
         bytes.position(10);
         bytes.stepBackAndSkipTo(CONTROL_STOP);
         assertEquals(13, bytes.position());
-
     }
 
     @Test
@@ -418,7 +418,7 @@ public class NativeBytesTest {
 
     @Test
     public void testReadWriteStop() {
-        long[] longs = {Long.MIN_VALUE, Long.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE};
+        long[] longs = {Long.MIN_VALUE, Long.MAX_VALUE, 1<<14, (1<<14)-1, 1<<7, (1<<7)-1, Integer.MIN_VALUE, Integer.MAX_VALUE};
         for (long i : longs) {
             bytes.writeStopBit(i);
 //            System.out.println(i + " " + bytes.position());
@@ -428,6 +428,18 @@ public class NativeBytesTest {
         bytes.position(0);
         for (long i : longs)
             assertEquals(i, bytes.readStopBit());
+
+        for(long l = 1; l > 0; l += l) {
+            bytes.clear();
+            bytes.writeStopBit(l-1);
+            bytes.writeStopBit(l);
+            bytes.writeStopBit(l+1);
+            bytes.flip();
+            assertEquals(l-1, bytes.readStopBit());
+            assertEquals(l, bytes.readStopBit());
+            assertEquals(l+1, bytes.readStopBit());
+            assertEquals(0, bytes.remaining());
+        }
     }
 
     @Test
@@ -583,8 +595,8 @@ public class NativeBytesTest {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd'T'HH:mm:ss.SSS");
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
         String asStr = sdf.format(new Date(now));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
     }
 
     @Test
@@ -657,7 +669,7 @@ public class NativeBytesTest {
     public void testAppendSubstring() {
         bytes.append("Hello World", 2, 7).append("\n");
         bytes.position(0);
-        assertEquals("Hello World".substring(2, 7), bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hello World".substring(2, 7), bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -684,7 +696,7 @@ public class NativeBytesTest {
         assertEquals(false, bytes.parseBoolean(SPACE_STOP));
         assertEquals(true, bytes.parseBoolean(SPACE_STOP));
         assertEquals(null, bytes.parseBoolean(SPACE_STOP));
-        assertEquals("word£€", bytes.parseUTF(SPACE_STOP));
+        assertEquals("word£€", bytes.parseUtf8(SPACE_STOP));
         assertEquals(BuySell.Buy, bytes.parseEnum(BuySell.class, SPACE_STOP));
         assertEquals(1234, bytes.parseLong());
         assertEquals(123456L, bytes.parseLong());
@@ -699,7 +711,7 @@ public class NativeBytesTest {
         assertEquals(null, bytes.parseBoolean(ALL));
         assertEquals(0L, bytes.parseLong());
         assertEquals(0.0, bytes.parseDouble(), 0.0);
-        assertEquals("", bytes.parseUTF(ALL));
+        assertEquals("", bytes.parseUtf8(ALL));
         assertEquals(null, bytes.parseEnum(StopCharTesters.class, ALL));
 
         bytes.selfTerminating(false);
@@ -716,7 +728,7 @@ public class NativeBytesTest {
         } catch (BufferUnderflowException ignored) {
         }
         try {
-            fail("got " + bytes.parseUTF(ALL));
+            fail("got " + bytes.parseUtf8(ALL));
         } catch (BufferUnderflowException ignored) {
         }
         try {
@@ -741,9 +753,10 @@ public class NativeBytesTest {
     public void testWriteBytes() {
         bytes.write("Hello World\n".getBytes(), 0, 10);
         bytes.write("good bye\n".getBytes(), 4, 4);
-        bytes.write(4, "0 w".getBytes());
+        bytes.write(4, "0".getBytes());
+        bytes.write(5, " w".getBytes(), 0, 2);
         bytes.position(0);
-        assertEquals("Hell0 worl bye", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hell0 worl bye", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -751,7 +764,7 @@ public class NativeBytesTest {
         bytes.append(Arrays.asList(1, 2, 3, 4, 5), ";").append(' ');
         bytes.append(new TreeSet<Integer>(Arrays.asList(21, 2, 13, 4, 5)), ";");
         bytes.position(0);
-        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -776,7 +789,7 @@ public class NativeBytesTest {
         bytes.position(0);
         bytes.parseDecimal(md2);
         bytes.position(0);
-        String text = bytes.parseUTF(CONTROL_STOP);
+        String text = bytes.parseUtf8(CONTROL_STOP);
         if (!md.equals(md2))
             assertEquals("n: " + n + ", s: " + j + " t: " + text, md, md2);
     }
@@ -828,6 +841,43 @@ public class NativeBytesTest {
     }
 
     @Test
+    public void testWriteByteable() {
+        final DummyByteable db1w = newDirectInstance(DummyByteable.class);
+        final DummyByteable db2w = newDirectInstance(DummyByteable.class);
+        final DummyByteable db1r = newDirectReference(DummyByteable.class);
+        final DummyByteable db2r = newDirectReference(DummyByteable.class);
+
+        db1w.setField1(1);
+        db1w.setField2(2);
+        db1w.setField3(3);
+
+        db2w.setField1(4);
+        db2w.setField2(5);
+        db2w.setField3(6);
+
+        bytes.write(db1w);
+        bytes.write(db2w);
+
+        assertEquals(32, bytes.position());
+
+        db1r.bytes(bytes, 0);
+        db2r.bytes(bytes, db1w.maxSize());
+
+        assertEquals(1, db1r.getField1());
+        assertEquals(2, db1r.getField2());
+        assertEquals(3, db1r.getField3());
+        assertEquals(4, db2r.getField1());
+        assertEquals(5, db2r.getField2());
+        assertEquals(6, db2r.getField3());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testWriteByteableException() {
+        DummyByteable byteable = newDirectReference(DummyByteable.class);
+        bytes.write(byteable);
+    }
+
+    @Test
     public void testWriteObject() {
         for (Object o : new Object[]{10, 9.9, "string", new Date(), BigDecimal.valueOf(1.1)}) {
             bytes.position(0);
@@ -873,17 +923,6 @@ public class NativeBytesTest {
         assertEquals(11 * 11, bytes.readInt(4L));
     }
 
-    enum BuySell {
-        Buy, Sell
-    }
-
-    static class Dummy implements Serializable {
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof Dummy;
-        }
-    }
-
     @Test
     public void testErrors() {
         int capacity = 1024;
@@ -899,17 +938,13 @@ public class NativeBytesTest {
         bytes.writeLong(16);
         bytes.finish();
         bytes.flush();
-        bytes.writeLong(24);
         try {
+            bytes.writeLong(24);
             bytes.finish();
             fail();
         } catch (IndexOutOfBoundsException expected) {
         }
-        try {
-            bytes.flush();
-            fail();
-        } catch (IndexOutOfBoundsException expected) {
-        }
+
         bytes.clear();
         assertEquals(0, bytes.position());
         assertEquals(8, bytes.skip(8));
@@ -961,7 +996,7 @@ public class NativeBytesTest {
         ExecutorService es = Executors.newSingleThreadExecutor(new NamedThreadFactory("unloadFailed"));
         Future<Void> future = es.submit(new Callable<Void>() {
             @Override
-            public Void call() throws Exception {
+            public Void call()   {
                 bytes.unlockInt(0);
                 return null;
             }
@@ -995,5 +1030,30 @@ public class NativeBytesTest {
         assertEquals("[pos: 7, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
         bytes.writeByte(8);
         assertEquals("[pos: 8, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎⒏‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
+    }
+
+    enum BuySell {
+        Buy, Sell
+    }
+
+    interface DummyByteable extends Byteable {
+        long getField1();
+
+        void setField1(long field);
+
+        int getField2();
+
+        void setField2(int field);
+
+        int getField3();
+
+        void setField3(int field);
+    }
+
+    static class Dummy implements Serializable {
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof Dummy;
+        }
     }
 }

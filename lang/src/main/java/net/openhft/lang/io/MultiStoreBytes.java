@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,9 @@
 package net.openhft.lang.io;
 
 public class MultiStoreBytes extends NativeBytes {
+    private Bytes underlyingBytes;
+    private long underlyingOffset;
+
     public MultiStoreBytes() {
         super(NO_PAGE, NO_PAGE);
     }
@@ -24,9 +27,31 @@ public class MultiStoreBytes extends NativeBytes {
     public void storePositionAndSize(BytesStore store, long offset, long size) {
         if (offset < 0 || size < 0 || offset + size > store.size())
             throw new IllegalArgumentException("offset: " + offset + ", size: " + size + ", store.size: " + store.size());
-        this.objectSerializer = store.objectSerializer();
-        startAddr = positionAddr = store.address() + offset;
+        setObjectSerializer(store.objectSerializer());
+
+        setStartPositionAddress(store.address() + offset);
         capacityAddr = limitAddr = startAddr + size;
+        underlyingBytes = null;
+        underlyingOffset = 0;
+    }
+
+    public void setBytesOffset(Bytes bytes, long offset) {
+        setObjectSerializer(bytes.objectSerializer());
+
+        long bytesAddr = bytes.address();
+        setStartPositionAddress(bytesAddr + offset);
+        capacityAddr = limitAddr = bytesAddr + bytes.capacity();
+        underlyingBytes = bytes;
+        underlyingOffset = offset;
+    }
+
+    public Bytes underlyingBytes() {
+        if (underlyingBytes == null) throw new IllegalStateException();
+        return underlyingBytes;
+    }
+
+    public long underlyingOffset() {
+        return underlyingOffset;
     }
 }
 

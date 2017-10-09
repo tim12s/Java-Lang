@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -171,4 +171,43 @@ public interface RandomDataUpdate {
      */
     long threadIdForLockLong(long offset);
 
+    /**
+     * Uses the 64-bit long at the offset as a non-reentrant read/write lock.
+     * There can be up to 2^20-1 threads reading, or waiting to read on a lock.
+     *
+     * @param offset    of the long monitor
+     * @param timeOutNS length of time to busy wait for the lock.
+     * @return if the lock could be obtained in time.
+     * @throws java.lang.IllegalStateException if the monitor is in an illegal state
+     */
+    boolean tryRWReadLock(long offset, long timeOutNS) throws IllegalStateException, InterruptedException;
+
+    /**
+     * Uses the 64-bit long at the offset as a non-reentrant read/write lock.
+     * There can be up to 2^20-1 threads reading, or waiting to read on a lock.
+     *
+     * @param offset    of the long monitor
+     * @param timeOutNS length of time to busy wait for the lock.
+     * @return if the lock could be obtained in time.
+     * @throws java.lang.IllegalStateException if the monitor is in an illegal state
+     */
+    boolean tryRWWriteLock(long offset, long timeOutNS) throws IllegalStateException, InterruptedException;
+
+    /**
+     * Uses the 64-bit long at the offset as a non-reentrant read/write lock.
+     * There can be up to 2^20-1 threads reading, or waiting to read on a lock.
+     *
+     * @param offset of the long monitor
+     * @throws java.lang.IllegalStateException if the monitor is in an illegal state
+     */
+    void unlockRWReadLock(long offset) throws IllegalStateException;
+
+    /**
+     * Uses the 64-bit long at the offset as a non-reentrant read/write lock.
+     * There can be up to 2^20-1 threads reading, or waiting to read on a lock.
+     *
+     * @param offset of the long monitor
+     * @throws java.lang.IllegalStateException if the monitor is in an illegal state
+     */
+    void unlockRWWriteLock(long offset) throws IllegalStateException;
 }

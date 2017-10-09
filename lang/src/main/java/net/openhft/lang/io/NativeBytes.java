@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,14 +18,18 @@ package net.openhft.lang.io;
 
 import net.openhft.lang.io.serialization.BytesMarshallerFactory;
 import net.openhft.lang.io.serialization.ObjectSerializer;
-import net.openhft.lang.model.constraints.NotNull;
+import org.jetbrains.annotations.NotNull;
 import sun.misc.Unsafe;
 
 import java.io.EOFException;
-import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.BufferUnderflowException;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static java.lang.Long.numberOfTrailingZeros;
 
 /**
  * @author peter.lawrey
@@ -39,6 +43,7 @@ public class NativeBytes extends AbstractBytes {
     public static final Unsafe UNSAFE;
     protected static final long NO_PAGE;
     static final int BYTES_OFFSET;
+    static final int CHARS_OFFSET;
 
     static {
         try {
@@ -47,7 +52,7 @@ public class NativeBytes extends AbstractBytes {
             theUnsafe.setAccessible(true);
             UNSAFE = (Unsafe) theUnsafe.get(null);
             BYTES_OFFSET = UNSAFE.arrayBaseOffset(byte[].class);
-
+            CHARS_OFFSET = UNSAFE.arrayBaseOffset(char[].class);
         } catch (Exception e) {
             throw new AssertionError(e);
         }
@@ -61,10 +66,7 @@ public class NativeBytes extends AbstractBytes {
 
     public NativeBytes(long startAddr, long capacityAddr) {
         super();
-        this.positionAddr =
-                this.startAddr = startAddr;
-        this.limitAddr =
-                this.capacityAddr = capacityAddr;
+        setStartPositionAddress(startAddr, capacityAddr);
     }
 
     /**
@@ -74,27 +76,39 @@ public class NativeBytes extends AbstractBytes {
     public NativeBytes(BytesMarshallerFactory bytesMarshallerFactory,
                        long startAddr, long capacityAddr, AtomicInteger refCount) {
         super(bytesMarshallerFactory, refCount);
-        this.positionAddr =
-                this.startAddr = startAddr;
+
+        setStartPositionAddress(startAddr);
         this.limitAddr =
                 this.capacityAddr = capacityAddr;
+        positionChecks(positionAddr);
     }
 
     public NativeBytes(ObjectSerializer objectSerializer,
                        long startAddr, long capacityAddr, AtomicInteger refCount) {
         super(objectSerializer, refCount);
-        this.positionAddr =
-                this.startAddr = startAddr;
+
+        setStartPositionAddress(startAddr);
         this.limitAddr =
                 this.capacityAddr = capacityAddr;
+        positionChecks(positionAddr);
     }
 
     public NativeBytes(NativeBytes bytes) {
         super(bytes.objectSerializer(), new AtomicInteger(1));
-        this.startAddr = bytes.startAddr;
+        setStartPositionAddress(bytes.startAddr);
+
         this.positionAddr = bytes.positionAddr;
         this.limitAddr = bytes.limitAddr;
         this.capacityAddr = bytes.capacityAddr;
+        positionChecks(positionAddr);
+    }
+
+    public static NativeBytes empty() {
+        return new NativeBytes(NO_PAGE, NO_PAGE);
+    }
+
+    public static NativeBytes wrap(long address, long capacity) {
+        return new NativeBytes(address, address + capacity);
     }
 
     public static long longHash(byte[] bytes, int off, int len) {
@@ -105,6 +119,89 @@ public class NativeBytes extends AbstractBytes {
         for (; pos < len; pos++)
             hash = hash * 57 + bytes[off + pos];
         return hash;
+    }
+
+    static long nextSetBit0(int firstByte, int maximum, long startAddr) {
+        for (int i = firstByte; i < maximum; i += 8) {
+            long l = UNSAFE.getLong(startAddr + i);
+            if (l != 0)
+                return (i << 3) + numberOfTrailingZeros(l);
+        }
+        return -1;
+    }
+
+    static long nextSetBit0(long firstByte, long maximum, long startAddr) {
+        for (long i = firstByte; i < maximum; i += 8) {
+            long l = UNSAFE.getLong(startAddr + i);
+            if (l != 0)
+                return (i << 3) + numberOfTrailingZeros(l);
+        }
+        return -1;
+    }
+
+    public void setStartPositionAddress(long startAddr, long capacityAddr) {
+        setStartPositionAddress(startAddr);
+        if (startAddr > capacityAddr)
+            throw new IllegalArgumentException("Missorted capacity address");
+        this.limitAddr =
+                this.capacityAddr = capacityAddr;
+        positionChecks(positionAddr);
+    }
+
+    public void setStartPositionAddress(long startAddr) {
+        if ((startAddr & ~0x3fff) == 0)
+            throw new AssertionError("Invalid address " + Long.toHexString(startAddr));
+        this.positionAddr =
+                this.startAddr = startAddr;
+    }
+
+    // optimised to reduce overhead.
+    public void readUTF0(@NotNull Appendable appendable, int utflen)
+            throws IOException {
+        if (utflen > remaining())
+            throw new BufferUnderflowException();
+        if (appendable instanceof StringBuilder)
+            readUTF1((StringBuilder) appendable, utflen);
+        else
+            readUTF1(appendable, utflen);
+    }
+
+    private void readUTF1(@NotNull StringBuilder sb, int utflen)
+            throws IOException {
+        int count = 0;
+        sb.ensureCapacity(utflen);
+        char[] chars = StringBuilderUtils.extractChars(sb);
+        ascii:
+        try {
+            while (count < utflen) {
+                int c = UNSAFE.getByte(positionAddr++) & 0xFF;
+                if (c >= 128) {
+                    break ascii;
+                }
+                chars[count++] = (char) c;
+            }
+            return;
+        } finally {
+            StringBuilderUtils.setCount(sb, count);
+        }
+
+        positionAddr--;
+        readUTF2(this, sb, utflen, count);
+    }
+
+    private void readUTF1(@NotNull Appendable appendable, int utflen)
+            throws IOException {
+        int count = 0;
+        while (count < utflen) {
+            int c = UNSAFE.getByte(positionAddr++) & 0xFF;
+            if (c >= 128) {
+                positionAddr--;
+                readUTF2(this, appendable, utflen, count);
+                break;
+            }
+            count++;
+            appendable.append((char) c);
+        }
     }
 
     @Override
@@ -171,6 +268,40 @@ public class NativeBytes extends AbstractBytes {
     }
 
     @Override
+    public Bytes zeroOut(long start, long end, boolean ifNotZero) {
+        return ifNotZero ? zeroOutDirty(start, end) : zeroOut(start, end);
+    }
+
+    private Bytes zeroOutDirty(long start, long end) {
+        if (start < 0 || end > limit())
+            throw new IllegalArgumentException("start: " + start + ", end: " + end);
+        if (start >= end)
+            return this;
+        // get unaligned leading bytes
+        while (start < end && (start & 7) != 0) {
+            byte b = UNSAFE.getByte(startAddr + start);
+            if (b != 0)
+                UNSAFE.putByte(startAddr + start, (byte) 0);
+            start++;
+        }
+        // check 64-bit aligned access
+        while (start < end - 7) {
+            long l = UNSAFE.getLong(startAddr + start);
+            if (l != 0)
+                UNSAFE.putLong(startAddr + start, 0L);
+            start += 8;
+        }
+        // check unaligned tail
+        while (start < end) {
+            byte b = UNSAFE.getByte(startAddr + start);
+            if (b != 0)
+                UNSAFE.putByte(startAddr + start, (byte) 0);
+            start++;
+        }
+        return this;
+    }
+
+    @Override
     public int read(@NotNull byte[] bytes, int off, int len) {
         if (len < 0 || off < 0 || off + len > bytes.length)
             throw new IllegalArgumentException();
@@ -178,13 +309,15 @@ public class NativeBytes extends AbstractBytes {
         if (left <= 0) return -1;
         int len2 = (int) Math.min(len, left);
         UNSAFE.copyMemory(null, positionAddr, bytes, BYTES_OFFSET + off, len2);
-        positionAddr += len2;
+        addPosition(len2);
         return len2;
     }
 
     @Override
     public byte readByte() {
-        return UNSAFE.getByte(positionAddr++);
+        byte aByte = UNSAFE.getByte(positionAddr);
+        addPosition(1);
+        return aByte;
     }
 
     @Override
@@ -194,19 +327,36 @@ public class NativeBytes extends AbstractBytes {
 
     @Override
     public void readFully(@NotNull byte[] b, int off, int len) {
-        if (len < 0 || off < 0 || off + len > b.length)
-            throw new IllegalArgumentException();
+        checkArrayOffs(b.length, off, len);
         long left = remaining();
         if (left < len)
             throw new IllegalStateException(new EOFException());
         UNSAFE.copyMemory(null, positionAddr, b, BYTES_OFFSET + off, len);
-        positionAddr += len;
+        addPosition(len);
+    }
+
+    @Override
+    public void readFully(long offset, byte[] bytes, int off, int len) {
+        checkArrayOffs(bytes.length, off, len);
+        UNSAFE.copyMemory(null, startAddr + offset, bytes, BYTES_OFFSET + off, len);
+    }
+
+    @Override
+    public void readFully(@NotNull char[] data, int off, int len) {
+        checkArrayOffs(data.length, off, len);
+        long bytesOff = off * 2L;
+        long bytesLen = len * 2L;
+        long left = remaining();
+        if (left < bytesLen)
+            throw new IllegalStateException(new EOFException());
+        UNSAFE.copyMemory(null, positionAddr, data, BYTES_OFFSET + bytesOff, bytesLen);
+        addPosition(bytesLen);
     }
 
     @Override
     public short readShort() {
         short s = UNSAFE.getShort(positionAddr);
-        positionAddr += 2;
+        addPosition(2);
         return s;
     }
 
@@ -218,7 +368,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public char readChar() {
         char ch = UNSAFE.getChar(positionAddr);
-        positionAddr += 2;
+        addPosition(2);
         return ch;
     }
 
@@ -230,7 +380,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public int readInt() {
         int i = UNSAFE.getInt(positionAddr);
-        positionAddr += 4;
+        addPosition(4);
         return i;
     }
 
@@ -242,7 +392,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public int readVolatileInt() {
         int i = UNSAFE.getIntVolatile(null, positionAddr);
-        positionAddr += 4;
+        addPosition(4);
         return i;
     }
 
@@ -254,7 +404,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public long readLong() {
         long l = UNSAFE.getLong(positionAddr);
-        positionAddr += 8;
+        addPosition(8);
         return l;
     }
 
@@ -266,7 +416,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public long readVolatileLong() {
         long l = UNSAFE.getLongVolatile(null, positionAddr);
-        positionAddr += 8;
+        addPosition(8);
         return l;
     }
 
@@ -278,7 +428,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public float readFloat() {
         float f = UNSAFE.getFloat(positionAddr);
-        positionAddr += 4;
+        addPosition(4);
         return f;
     }
 
@@ -290,7 +440,7 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public double readDouble() {
         double d = UNSAFE.getDouble(positionAddr);
-        positionAddr += 8;
+        addPosition(8);
         return d;
     }
 
@@ -301,11 +451,13 @@ public class NativeBytes extends AbstractBytes {
 
     @Override
     public void write(int b) {
-        UNSAFE.putByte(positionAddr++, (byte) b);
+        UNSAFE.putByte(positionAddr, (byte) b);
+        incrementPositionAddr(1);
     }
 
     @Override
     public void writeByte(long offset, int b) {
+        offsetChecks(offset, 1L);
         UNSAFE.putByte(startAddr + offset, (byte) b);
     }
 
@@ -314,124 +466,163 @@ public class NativeBytes extends AbstractBytes {
         if (offset < 0 || offset + bytes.length > capacity())
             throw new IllegalArgumentException();
         UNSAFE.copyMemory(bytes, BYTES_OFFSET, null, startAddr + offset, bytes.length);
-        positionAddr += bytes.length;
+        addPosition(bytes.length);
     }
 
     @Override
     public void write(byte[] bytes, int off, int len) {
+        if (off < 0 || off + len > bytes.length || len > remaining())
+            throw new IllegalArgumentException();
         UNSAFE.copyMemory(bytes, BYTES_OFFSET + off, null, positionAddr, len);
-        positionAddr += len;
+        addPosition(len);
+    }
+
+    @Override
+    public void write(long offset, byte[] bytes, int off, int len) {
+        if (offset < 0 || off + len > bytes.length || offset + len > capacity())
+            throw new IllegalArgumentException();
+        UNSAFE.copyMemory(bytes, BYTES_OFFSET + off, null, startAddr + offset, len);
     }
 
     @Override
     public void writeShort(int v) {
+        positionChecks(positionAddr + 2L);
         UNSAFE.putShort(positionAddr, (short) v);
-        positionAddr += 2;
+        positionAddr += 2L;
+    }
+
+    private long incrementPositionAddr(long value) {
+        positionAddr(positionAddr() + value);
+        return positionAddr();
     }
 
     @Override
     public void writeShort(long offset, int v) {
+        offsetChecks(offset, 2L);
         UNSAFE.putShort(startAddr + offset, (short) v);
     }
 
     @Override
     public void writeChar(int v) {
+        positionChecks(positionAddr + 2L);
         UNSAFE.putChar(positionAddr, (char) v);
-        positionAddr += 2;
+        positionAddr += 2L;
+    }
+
+    void addPosition(long delta) {
+        positionAddr(positionAddr() + delta);
     }
 
     @Override
     public void writeChar(long offset, int v) {
+        offsetChecks(offset, 2L);
         UNSAFE.putChar(startAddr + offset, (char) v);
     }
 
     @Override
     public void writeInt(int v) {
-        UNSAFE.putInt(null, positionAddr, v);
-        positionAddr += 4;
+        positionChecks(positionAddr + 4L);
+        UNSAFE.putInt(positionAddr, v);
+        positionAddr += 4L;
     }
 
     @Override
     public void writeInt(long offset, int v) {
+        offsetChecks(offset, 4L);
         UNSAFE.putInt(startAddr + offset, v);
     }
 
     @Override
     public void writeOrderedInt(int v) {
+        positionChecks(positionAddr + 4L);
         UNSAFE.putOrderedInt(null, positionAddr, v);
-        positionAddr += 4;
+        positionAddr += 4L;
     }
 
     @Override
     public void writeOrderedInt(long offset, int v) {
+        offsetChecks(offset, 4L);
         UNSAFE.putOrderedInt(null, startAddr + offset, v);
     }
 
     @Override
     public boolean compareAndSwapInt(long offset, int expected, int x) {
+        offsetChecks(offset, 4L);
         return UNSAFE.compareAndSwapInt(null, startAddr + offset, expected, x);
     }
 
     @Override
     public void writeLong(long v) {
+        positionChecks(positionAddr + 8L);
         UNSAFE.putLong(positionAddr, v);
-        positionAddr += 8;
+        positionAddr += 8L;
     }
 
     @Override
     public void writeLong(long offset, long v) {
+        offsetChecks(offset, 8L);
         UNSAFE.putLong(startAddr + offset, v);
     }
 
     @Override
     public void writeOrderedLong(long v) {
+        positionChecks(positionAddr + 8L);
         UNSAFE.putOrderedLong(null, positionAddr, v);
-        positionAddr += 8;
+        positionAddr += 8L;
     }
 
     @Override
     public void writeOrderedLong(long offset, long v) {
+        offsetChecks(offset, 8L);
         UNSAFE.putOrderedLong(null, startAddr + offset, v);
     }
 
     @Override
     public boolean compareAndSwapLong(long offset, long expected, long x) {
+        offsetChecks(offset, 8L);
         return UNSAFE.compareAndSwapLong(null, startAddr + offset, expected, x);
     }
 
     @Override
     public void writeFloat(float v) {
+        positionChecks(positionAddr + 4L);
         UNSAFE.putFloat(positionAddr, v);
-        positionAddr += 4;
+        positionAddr += 4L;
     }
 
     @Override
     public void writeFloat(long offset, float v) {
+        offsetChecks(offset, 4L);
         UNSAFE.putFloat(startAddr + offset, v);
     }
 
     @Override
     public void writeDouble(double v) {
+        positionChecks(positionAddr + 8L);
         UNSAFE.putDouble(positionAddr, v);
-        positionAddr += 8;
+        positionAddr += 8L;
     }
 
     @Override
     public void writeDouble(long offset, double v) {
+        offsetChecks(offset, 8L);
         UNSAFE.putDouble(startAddr + offset, v);
     }
 
     @Override
     public void readObject(Object object, int start, int end) {
         int len = end - start;
+        if (positionAddr + len >= limitAddr)
+            throw new IndexOutOfBoundsException("Length out of bounds len: " + len);
+
         for (; len >= 8; len -= 8) {
             UNSAFE.putLong(object, (long) start, UNSAFE.getLong(positionAddr));
-            positionAddr += 8;
+            incrementPositionAddr(8L);
             start += 8;
         }
         for (; len > 0; len--) {
             UNSAFE.putByte(object, (long) start, UNSAFE.getByte(positionAddr));
-            positionAddr++;
+            incrementPositionAddr(1L);
             start++;
         }
     }
@@ -439,33 +630,46 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public void writeObject(Object object, int start, int end) {
         int len = end - start;
+
         for (; len >= 8; len -= 8) {
+            positionChecks(positionAddr + 8L);
             UNSAFE.putLong(positionAddr, UNSAFE.getLong(object, (long) start));
             positionAddr += 8;
             start += 8;
         }
         for (; len > 0; len--) {
+            positionChecks(positionAddr + 1L);
             UNSAFE.putByte(positionAddr, UNSAFE.getByte(object, (long) start));
             positionAddr++;
             start++;
         }
     }
 
-    public boolean startsWith(RandomDataInput input) {
-        long inputRemaining = input.remaining();
-        if ((limitAddr - positionAddr) < inputRemaining) return false;
-        long pos = position(), inputPos = input.position();
-
-        // pull into cache...
-        UNSAFE.getLong(startAddr + pos);
-
-        int i = 0;
-        for (; i < inputRemaining - 7; i += 8) {
-            if (UNSAFE.getLong(startAddr + pos + i) != input.readLong(inputPos + i))
+    @Override
+    public boolean compare(long offset, RandomDataInput input, long inputOffset, long len) {
+        if (offset < 0 || inputOffset < 0 || len < 0)
+            throw new IndexOutOfBoundsException();
+        if (offset + len < 0 || offset + len > capacity() || inputOffset + len < 0 ||
+                inputOffset + len > input.capacity()) {
+            return false;
+        }
+        long i = 0L;
+        for (; i < len - 7L; i += 8L) {
+            if (UNSAFE.getLong(startAddr + offset + i) != input.readLong(inputOffset + i))
                 return false;
         }
-        for (; i < inputRemaining; i++) {
-            if (UNSAFE.getByte(startAddr + pos + i) != input.readByte(inputPos + i))
+        if (i < len - 3L) {
+            if (UNSAFE.getInt(startAddr + offset + i) != input.readInt(inputOffset + i))
+                return false;
+            i += 4L;
+        }
+        if (i < len - 1L) {
+            if (UNSAFE.getChar(startAddr + offset + i) != input.readChar(inputOffset + i))
+                return false;
+            i += 2L;
+        }
+        if (i < len) {
+            if (UNSAFE.getByte(startAddr + offset + i) != input.readByte(inputOffset + i))
                 return false;
         }
         return true;
@@ -479,9 +683,40 @@ public class NativeBytes extends AbstractBytes {
     @Override
     public NativeBytes position(long position) {
         if (position < 0 || position > limit())
-            throw new IllegalArgumentException("position: " + position + " limit: " + limit());
-        this.positionAddr = startAddr + position;
+            throw new IndexOutOfBoundsException("position: " + position + " limit: " + limit());
+
+        positionAddr(startAddr + position);
         return this;
+    }
+
+    /**
+     * Change the position acknowleging there is no thread safety assumptions. Best effort setting
+     * is fine. *
+     *
+     * @param position to set if we can.
+     * @return this
+     */
+    public NativeBytes lazyPosition(long position) {
+        if (position < 0 || position > limit())
+            throw new IndexOutOfBoundsException("position: " + position + " limit: " + limit());
+
+        // assume we don't need to no check thread safety.
+
+        positionAddr(startAddr + position);
+        return this;
+    }
+
+    @Override
+    public void write(RandomDataInput bytes, long position, long length) {
+        if (length > remaining())
+            throw new IllegalArgumentException("Attempt to write " + length + " bytes with " + remaining() + " remaining");
+        if (bytes instanceof NativeBytes) {
+            UNSAFE.copyMemory(((NativeBytes) bytes).startAddr + position, positionAddr, length);
+            skip(length);
+
+        } else {
+            super.write(bytes, position, length);
+        }
     }
 
     @Override
@@ -499,11 +734,12 @@ public class NativeBytes extends AbstractBytes {
         return (limitAddr - startAddr);
     }
 
-
     @Override
     public NativeBytes limit(long limit) {
-        if (limit < 0 || limit > capacity())
+        if (limit < 0 || limit > capacity()) {
             throw new IllegalArgumentException("limit: " + limit + " capacity: " + capacity());
+        }
+
         limitAddr = startAddr + limit;
         return this;
     }
@@ -516,8 +752,10 @@ public class NativeBytes extends AbstractBytes {
 
     @Override
     public void checkEndOfBuffer() throws IndexOutOfBoundsException {
-        if (position() > capacity())
-            throw new IndexOutOfBoundsException("position is beyond the end of the buffer " + position() + " > " + capacity());
+        if (position() > limit()) {
+            throw new IndexOutOfBoundsException(
+                    "position is beyond the end of the buffer " + position() + " > " + limit());
+        }
     }
 
     public long startAddr() {
@@ -542,16 +780,79 @@ public class NativeBytes extends AbstractBytes {
     }
 
     public void alignPositionAddr(int powerOf2) {
-        positionAddr = (positionAddr + powerOf2 - 1) & ~(powerOf2 - 1);
+        long value = (positionAddr + powerOf2 - 1) & ~(powerOf2 - 1);
+        positionAddr(value);
     }
 
     public void positionAddr(long positionAddr) {
+        positionChecks(positionAddr);
         this.positionAddr = positionAddr;
+    }
+
+    void positionChecks(long positionAddr) {
+        assert actualPositionChecks(positionAddr);
+    }
+
+    boolean actualPositionChecks(long positionAddr) {
+        if (positionAddr < startAddr)
+            throw new IndexOutOfBoundsException("position before the start by " + (startAddr - positionAddr) + " bytes");
+        if (positionAddr > limitAddr)
+            throw new IndexOutOfBoundsException("position after the limit by " + (positionAddr - limitAddr) + " bytes");
+
+        return true;
+    }
+
+    void offsetChecks(long offset, long len) {
+        assert actualOffsetChecks(offset, len);
+    }
+
+    boolean actualOffsetChecks(long offset, long len) {
+        if (offset < 0L || offset + len > capacity())
+            throw new IndexOutOfBoundsException("offset out of bounds: " + offset + ", len: " +
+                    len + ", capacity: " + capacity());
+        return true;
     }
 
     public long positionAddr() {
         return positionAddr;
     }
 
+    @Override
+    public ByteBuffer sliceAsByteBuffer(ByteBuffer toReuse) {
+        return sliceAsByteBuffer(toReuse, null);
+    }
 
+    protected ByteBuffer sliceAsByteBuffer(ByteBuffer toReuse, Object att) {
+        return ByteBufferReuse.INSTANCE.reuse(positionAddr, (int) remaining(), att, toReuse);
+    }
+
+    void address(long address) {
+        setStartPositionAddress(address);
+    }
+
+    void capacity(long capacity) {
+        this.limitAddr = this.capacityAddr = capacity;
+    }
+
+    @Override
+    public long nextSetBit(long fromIndex) {
+        if (fromIndex < 0)
+            throw new IndexOutOfBoundsException();
+        long capacity = capacity();
+        long maxBit = capacity << 3;
+        long fromLongIndex = fromIndex & ~63;
+        if (fromLongIndex >= maxBit)
+            return -1;
+        long firstByte = fromLongIndex >>> 3;
+        if ((fromIndex & 63) != 0) {
+            long l = UNSAFE.getLongVolatile(null, startAddr + firstByte) >>> fromIndex;
+            if (l != 0) {
+                return fromIndex + numberOfTrailingZeros(l);
+            }
+            firstByte += 8;
+        }
+        if (capacity < Integer.MAX_VALUE)
+            return nextSetBit0((int) firstByte, (int) capacity, startAddr);
+        return nextSetBit0(firstByte, capacity, startAddr);
+    }
 }

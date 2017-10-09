@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -38,6 +38,7 @@ public class Maths {
      * precision of double.
      *
      * @param d value to round
+     * @return rounded value
      */
     public static double round2(double d) {
         final double factor = 1e2;
@@ -93,8 +94,11 @@ public class Maths {
     }
 
     public static int nextPower2(int n, int min) {
+        if (!isPowerOf2(min))
+            throw new IllegalArgumentException();
         if (n < min) return min;
-        if ((n & (n - 1)) == 0) return n;
+        if (isPowerOf2(n))
+            return n;
         int i = min;
         while (i < n) {
             i *= 2;
@@ -104,8 +108,11 @@ public class Maths {
     }
 
     public static long nextPower2(long n, long min) {
+        if (!isPowerOf2(min))
+            throw new IllegalArgumentException();
         if (n < min) return min;
-        if ((n & (n - 1)) == 0) return n;
+        if (isPowerOf2(n))
+            return n;
         long i = min;
         while (i < n) {
             i *= 2;
@@ -114,17 +121,24 @@ public class Maths {
         return i;
     }
 
+    public static boolean isPowerOf2(int n) {
+        return (n & (n - 1)) == 0;
+    }
+
+    public static boolean isPowerOf2(long n) {
+        return (n & (n - 1L)) == 0L;
+    }
 
     public static int hash(int n) {
-        n ^= (n >> 21) ^ (n >> 11);
-        n ^= (n >> 7) ^ (n >> 4);
+        n ^= (n >>> 21) - (n >>> 11);
+        n ^= (n >>> 7) + (n >>> 4);
         return n;
     }
 
-    public static int hash(long n) {
-        n ^= (n >> 43) ^ (n >> 21);
-        n ^= (n >> 15) ^ (n >> 7);
-        return (int) n;
+    public static long hash(long n) {
+        n ^= (n >>> 41) - (n >>> 21);
+        n ^= (n >>> 15) + (n >>> 7);
+        return n;
     }
 
     public static long hash(CharSequence cs) {
@@ -133,7 +147,6 @@ public class Maths {
             hash = hash * 131 + cs.charAt(i);
         return hash;
     }
-
 
     /**
      * Compares two {@code long} values numerically. The value returned is identical to what would be returned by:
@@ -153,5 +166,17 @@ public class Maths {
     public static int intLog2(long num) {
         long l = Double.doubleToRawLongBits(num);
         return (int) ((l >> 52) - 1023);
+    }
+
+    public static int toInt(long l, String error) {
+        if (l < Integer.MIN_VALUE || l > Integer.MAX_VALUE)
+            throw new IllegalStateException(String.format(error, l));
+        return (int) l;
+    }
+
+    public static long agitate(long l) {
+        l ^= l >> 23;
+        l += Long.rotateRight(l, 18);
+        return l;
     }
 }

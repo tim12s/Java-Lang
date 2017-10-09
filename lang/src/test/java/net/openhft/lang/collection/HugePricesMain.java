@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -42,9 +42,9 @@ interface QuoteHeader {
     // @Start
     void setMajor(@Range(min = 0, max = (1 << 24) - 1) int major);
 
-    void setType(char ch);
-
     char getType();
+
+    void setType(char ch);
 }
 
 interface Quote extends QuoteHeader {
@@ -63,12 +63,10 @@ interface TimedQuote extends Quote {
     void setTimestamp(long price);
 }
 
-
 public class HugePricesMain {
 
-
     @Test
-    public  void test() {
+    public void test() {
         int length = 1000;
         final HugeArray<Price> prices =
                 HugeCollections.newArray(Price.class, length);

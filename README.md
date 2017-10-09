@@ -1,4 +1,4 @@
-#JavaLang
+# JavaLang
 This module provides marshalling, de-marshalling and handling of thread safe off heap memory through ByteBuffers.
 
 This module is available on maven central as
@@ -6,7 +6,7 @@ This module is available on maven central as
     <dependency>
         <groupId>net.openhft</groupId>
         <artifactId>lang</artifactId>
-        <version>6.3.5</version>
+        <version><!--replace with the latest version--></version>
     </dependency>
 
 The version 6.x signifies that it is build for Java 6+. (It requires Java 6 update 18 or later to build)
@@ -53,17 +53,17 @@ Both classes provide functionality:
 * CAS operations for int and long _boolean compareAndSwapInt(long offset, int expected, int x)_, _boolean compareAndSwapLong(long offset, long expected, long x)_
 * addAndGetInt and getAndAddInt operations
 
-####Example
+#### Example
     ByteBuffer byteBuffer = ByteBuffer.allocate(SIZE);
     ByteBufferBytes bytes = new ByteBufferBytes(byteBuffer);
-    for (long i = 0; i < bytes.capacity(); i++)
+    for (long i = 0; i < bytes.maximumLimit(); i++)
         bytes.writeLong(i);
-    for (long i = bytes.capacity()-8; i >= 0; i -= 8) {
+    for (long i = bytes.maximumLimit()-8; i >= 0; i -= 8) {
         int j = bytes.readLong(i);
         assert i ==  j;
     }
 
-#Building for eclipse
+# Building for eclipse
 
 Download Java-Lang zip from git https://github.com/OpenHFT/Java-Lang/archive/master.zip
 
@@ -75,5 +75,4 @@ Unzip master.zip, Java-Lang-master folder will be extracted from zip.
 Now you have an eclipse project, import project into Eclipse
 
 If your Eclipse configuration is not UTF-8, after importing the project you may see some errors and strange characters in some .java files. To get rid of this problem change character enconding to UTF-8: project->properties->resource->text file encoding->utf8
-
 

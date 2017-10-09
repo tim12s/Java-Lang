@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,8 @@
  */
 
 package net.openhft.lang.model;
+
+import net.openhft.lang.io.DirectStore;
 
 import java.util.WeakHashMap;
 
@@ -34,6 +36,13 @@ public enum DataValueClasses {
     public static <T> T newDirectReference(Class<T> interfaceClass) {
         DataValueClassCache dataValueClassCache = acquireCache(interfaceClass);
         return dataValueClassCache.newDirectReference(interfaceClass);
+    }
+
+    public static <T> T newDirectInstance(Class<T> interfaceClass) {
+        T t = newDirectReference(interfaceClass);
+        Byteable b = (Byteable) t;
+        b.bytes(DirectStore.allocate(b.maxSize()).bytes(), 0);
+        return t;
     }
 
     public static <T> Class<T> heapClassFor(Class<T> interfaceClass) {

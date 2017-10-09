@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,8 +27,8 @@ import java.util.Date;
  * @author peter.lawrey
  */
 public class DateMarshaller implements CompactBytesMarshaller<Date> {
+    private static final StringBuilderPool sbp = new StringBuilderPool();
     private final int size1;
-    private final StringBuilder sb = new StringBuilder();
     @Nullable
     private Date[] interner = null;
 
@@ -65,6 +65,7 @@ public class DateMarshaller implements CompactBytesMarshaller<Date> {
     @Nullable
     @Override
     public Date read(@NotNull Bytes bytes) {
+        StringBuilder sb = sbp.acquireStringBuilder();
         bytes.readUTFΔ(sb);
         long time = parseLong(sb);
         return lookupDate(time);
@@ -75,6 +76,7 @@ public class DateMarshaller implements CompactBytesMarshaller<Date> {
     public Date read(Bytes bytes, @Nullable Date date) {
         if (date == null)
             return read(bytes);
+        StringBuilder sb = sbp.acquireStringBuilder();
         bytes.readUTFΔ(sb);
         long time = parseLong(sb);
         date.setTime(time);
@@ -101,6 +103,6 @@ public class DateMarshaller implements CompactBytesMarshaller<Date> {
 
     @Override
     public byte code() {
-        return 'T' & 31; // Control T.
+        return DATE_CODE; // Control T.
     }
 }

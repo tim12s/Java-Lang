@@ -1,14 +1,12 @@
 /*
- * Copyright 2014 Higher Frequency Trading
- * <p/>
- * http://www.higherfrequencytrading.com
- * <p/>
+ * Copyright 2016 higherfrequencytrading.com
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * <p/>
- * http://www.apache.org/licenses/LICENSE-2.0
- * <p/>
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -25,15 +23,14 @@ import net.openhft.lang.model.constraints.MaxSize;
  */
 public interface GetUsingStringInterface {
 
-    void setSomeStringField(@MaxSize(64) String s);
-
     void setAnotherStringField(@MaxSize(64) String s);
 
     String getSomeStringField();
 
+    void setSomeStringField(@MaxSize(64) String s);
+
     void getUsingSomeStringField(StringBuilder builder);
 
     StringBuilder getUsingAnotherStringField(StringBuilder builder);
-
 }
 

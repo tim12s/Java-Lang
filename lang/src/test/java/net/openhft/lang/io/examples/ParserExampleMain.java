@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@
 package net.openhft.lang.io.examples;
 
 import net.openhft.lang.io.ByteBufferBytes;
+import net.openhft.lang.io.Bytes;
 import net.openhft.lang.io.StopCharTesters;
 
 import java.nio.ByteBuffer;
@@ -31,7 +32,7 @@ import static org.junit.Assert.assertEquals;
 public class ParserExampleMain {
     public static void main(String... ignored) {
         ByteBuffer wrap = ByteBuffer.allocate(1024);
-        ByteBufferBytes bufferBytes = new ByteBufferBytes(wrap);
+        Bytes bufferBytes = ByteBufferBytes.wrap(wrap);
         byte[] bytes = "BAC,12.32,12.54,12.56,232443".getBytes();
 
         int runs = 10000000;
@@ -42,7 +43,7 @@ public class ParserExampleMain {
             bufferBytes.write(bytes);
             bufferBytes.position(0);
             // decode message
-            String word = bufferBytes.parseUTF(StopCharTesters.COMMA_STOP);
+            String word = bufferBytes.parseUtf8(StopCharTesters.COMMA_STOP);
             double low = bufferBytes.parseDouble();
             double curr = bufferBytes.parseDouble();
             double high = bufferBytes.parseDouble();

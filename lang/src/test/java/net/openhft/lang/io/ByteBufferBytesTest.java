@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,9 @@
 package net.openhft.lang.io;
 
 import net.openhft.lang.Maths;
+import net.openhft.lang.io.serialization.BytesMarshallable;
+import net.openhft.lang.model.DataValueClasses;
+import net.openhft.lang.model.constraints.MaxSize;
 import net.openhft.lang.thread.NamedThreadFactory;
 import org.junit.Before;
 import org.junit.Test;
@@ -36,22 +39,21 @@ import static net.openhft.lang.io.StopCharTesters.*;
 import static org.junit.Assert.*;
 
 /**
- * Created with IntelliJ IDEA. User: peter.lawrey Date: 17/09/13 Time: 16:09 To change this template use File | Settings | File
- * Templates.
+ * User: peter.lawrey
  */
 public class ByteBufferBytesTest {
     public static final int SIZE = 128;
-    private ByteBufferBytes bytes;
+    private Bytes bytes;
     private ByteBuffer byteBuffer;
 
     @Before
     public void beforeTest() {
         byteBuffer = ByteBuffer.allocate(SIZE).order(ByteOrder.nativeOrder());
-        bytes = new ByteBufferBytes(byteBuffer);
+        bytes = ByteBufferBytes.wrap(byteBuffer);
     }
 
     @Test
-    public void testLongHash() throws Exception {
+    public void testLongHash()   {
         byte[] bytes = {1, 2, 3, 4, 5, 6, 7, 8};
         long h = NativeBytes.longHash(bytes, 0, bytes.length);
         assertFalse(h == 0);
@@ -63,13 +65,13 @@ public class ByteBufferBytesTest {
 
     @Test
     public void testCAS() {
-        Bytes bytes = new ByteBufferBytes(ByteBuffer.allocate(100));
+        Bytes bytes = ByteBufferBytes.wrap(ByteBuffer.allocate(100));
         bytes.compareAndSwapLong(0, 0L, 1L);
         assertEquals(1L, bytes.readLong(0));
     }
 
     @Test
-    public void testRead() throws Exception {
+    public void testRead()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.writeByte(i, i);
         bytes.position(0);
@@ -78,11 +80,10 @@ public class ByteBufferBytesTest {
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
             assertEquals((byte) i, bytes.readByte(i));
         }
-
     }
 
     @Test
-    public void testReadFully() throws Exception {
+    public void testReadFully()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         bytes.position(0);
@@ -93,16 +94,15 @@ public class ByteBufferBytesTest {
     }
 
     @Test
-    public void testCompareAndSetLong() throws Exception {
+    public void testCompareAndSetLong()   {
         assertTrue(bytes.compareAndSwapLong(0, 0, 1));
         assertFalse(bytes.compareAndSwapLong(0, 0, 1));
         assertTrue(bytes.compareAndSwapLong(8, 0, 1));
         assertTrue(bytes.compareAndSwapLong(0, 1, 2));
-
     }
 
     @Test
-    public void testPosition() throws Exception {
+    public void testPosition()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
@@ -112,25 +112,19 @@ public class ByteBufferBytesTest {
     }
 
     @Test
-    public void testCapacity() throws Exception {
-        assertEquals(SIZE, bytes.capacity());
-        assertEquals(10, new NativeBytes(0, 10).capacity());
-    }
-
-    @Test
-    public void testRemaining() throws Exception {
+    public void testRemaining()   {
         assertEquals(SIZE, bytes.remaining());
         bytes.position(10);
         assertEquals(SIZE - 10, bytes.remaining());
     }
 
     @Test
-    public void testByteOrder() throws Exception {
+    public void testByteOrder()   {
         assertEquals(ByteOrder.nativeOrder(), bytes.byteOrder());
     }
 
     @Test
-    public void testCheckEndOfBuffer() throws Exception {
+    public void testCheckEndOfBuffer()   {
         bytes.checkEndOfBuffer();
 
         try {
@@ -199,7 +193,7 @@ public class ByteBufferBytesTest {
         bytes.position(0);
         bytes.append(d, precision).append(' ');
         bytes.position(0);
-        String text = bytes.parseUTF(SPACE_STOP);
+        String text = bytes.parseUtf8(SPACE_STOP);
         bytes.position(0);
         assertEquals(0, bytes.position());
         double d2 = bytes.parseDouble();
@@ -278,17 +272,17 @@ public class ByteBufferBytesTest {
         bytes.append('\t');
         bytes.flip();
         for (String word : words) {
-            assertEquals(word, bytes.parseUTF(CONTROL_STOP));
+            assertEquals(word, bytes.parseUtf8(CONTROL_STOP));
         }
-        assertEquals("", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("", bytes.parseUtf8(CONTROL_STOP));
 
         bytes.position(0);
         StringBuilder sb = new StringBuilder();
         for (String word : words) {
-            bytes.parseUTF(sb, CONTROL_STOP);
+            bytes.parseUtf8(sb, CONTROL_STOP);
             assertEquals(word, sb.toString());
         }
-        bytes.parseUTF(sb, CONTROL_STOP);
+        bytes.parseUtf8(sb, CONTROL_STOP);
         assertEquals("", sb.toString());
 
         bytes.position(0);
@@ -310,7 +304,6 @@ public class ByteBufferBytesTest {
         bytes.position(10);
         bytes.stepBackAndSkipTo(CONTROL_STOP);
         assertEquals(13, bytes.position());
-
     }
 
     @Test
@@ -587,8 +580,8 @@ public class ByteBufferBytesTest {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd'T'HH:mm:ss.SSS");
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
         String asStr = sdf.format(new Date(now));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
     }
 
     @Test
@@ -661,7 +654,7 @@ public class ByteBufferBytesTest {
     public void testAppendSubstring() {
         bytes.append("Hello World", 2, 7).append("\n");
         bytes.position(0);
-        assertEquals("Hello World".substring(2, 7), bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hello World".substring(2, 7), bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -689,7 +682,7 @@ public class ByteBufferBytesTest {
         assertEquals(false, bytes.parseBoolean(SPACE_STOP));
         assertEquals(true, bytes.parseBoolean(SPACE_STOP));
         assertEquals(null, bytes.parseBoolean(SPACE_STOP));
-        assertEquals("word£€", bytes.parseUTF(SPACE_STOP));
+        assertEquals("word£€", bytes.parseUtf8(SPACE_STOP));
         assertEquals(BuySell.Buy, bytes.parseEnum(BuySell.class, SPACE_STOP));
         assertEquals(1234, bytes.parseLong());
         assertEquals(123456L, bytes.parseLong());
@@ -704,7 +697,7 @@ public class ByteBufferBytesTest {
         assertEquals(null, bytes.parseBoolean(ALL));
         assertEquals(0L, bytes.parseLong());
         assertEquals(0.0, bytes.parseDouble(), 0.0);
-        assertEquals("", bytes.parseUTF(ALL));
+        assertEquals("", bytes.parseUtf8(ALL));
         assertEquals(null, bytes.parseEnum(StopCharTesters.class, ALL));
 
         bytes.selfTerminating(false);
@@ -721,7 +714,7 @@ public class ByteBufferBytesTest {
         } catch (BufferUnderflowException ignored) {
         }
         try {
-            fail("got " + bytes.parseUTF(ALL));
+            fail("got " + bytes.parseUtf8(ALL));
         } catch (BufferUnderflowException ignored) {
         }
         try {
@@ -748,7 +741,7 @@ public class ByteBufferBytesTest {
         bytes.write("good bye\n".getBytes(), 4, 4);
         bytes.write(4, "0 w".getBytes());
         bytes.position(0);
-        assertEquals("Hell0 worl bye", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hell0 worl bye", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -756,7 +749,7 @@ public class ByteBufferBytesTest {
         bytes.append(Arrays.asList(1, 2, 3, 4, 5), ";").append(' ');
         bytes.append(new TreeSet<Integer>(Arrays.asList(21, 2, 13, 4, 5)), ";");
         bytes.position(0);
-        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -781,14 +774,14 @@ public class ByteBufferBytesTest {
         bytes.position(0);
         bytes.parseDecimal(md2);
         bytes.position(0);
-        String text = bytes.parseUTF(CONTROL_STOP);
+        String text = bytes.parseUtf8(CONTROL_STOP);
         if (!md.equals(md2))
             assertEquals("n: " + n + ", s: " + j + " t: " + text, md, md2);
     }
 
     @Test
     public void testStream() throws IOException {
-        bytes = new ByteBufferBytes(ByteBuffer.allocate(1000));
+        bytes = ByteBufferBytes.wrap(ByteBuffer.allocate(1000));
         GZIPOutputStream out = new GZIPOutputStream(bytes.outputStream());
         out.write("Hello world\n".getBytes());
         out.close();
@@ -853,7 +846,7 @@ public class ByteBufferBytesTest {
     public void testWriteSerializable() {
         int capacity = 16 * 1024;
         byteBuffer = ByteBuffer.allocateDirect(capacity);
-        bytes = new ByteBufferBytes(byteBuffer);
+        bytes = ByteBufferBytes.wrap(byteBuffer);
         Calendar cal = Calendar.getInstance();
         bytes.writeObject(cal);
         Dummy d = new Dummy();
@@ -878,15 +871,34 @@ public class ByteBufferBytesTest {
         assertEquals(11 * 11, bytes.readInt(4L));
     }
 
-    enum BuySell {
-        Buy, Sell
-    }
+    @Test
+    public void testReadWriteMarshallable() {
+        // generate a class for this interface.
+        // you can use any hand written BytesMarshallable
+        MyMarshallable mm = DataValueClasses.newInstance(MyMarshallable.class);
 
-    static class Dummy implements Serializable {
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof Dummy;
-        }
+        mm.setNum(5);
+        mm.setBig(3.1415);
+        mm.setText("Hello World");
+
+        // write to a byte[]
+        ByteBuffer byteBuffer = ByteBuffer.allocate(128);
+        IByteBufferBytes bbb = ByteBufferBytes.wrap(byteBuffer);
+        mm.writeMarshallable(bbb);
+
+        // how much data was written.
+        int len = (int) bbb.position();
+        byte[] bytes = byteBuffer.array();
+
+        // deserialize from a byte[]
+        MyMarshallable mm2 = DataValueClasses.newInstance(MyMarshallable.class);
+        IByteBufferBytes bbb2 = ByteBufferBytes.wrap(ByteBuffer.wrap(bytes));
+        bbb2.limit(len);
+        mm2.readMarshallable(bbb2);
+
+        assertEquals(5, mm2.getNum());
+        assertEquals(3.1415, mm2.getBig(), 0.0);
+        assertEquals("Hello World", mm2.getText());
     }
 
     @Test
@@ -962,7 +974,7 @@ public class ByteBufferBytesTest {
         ExecutorService es = Executors.newSingleThreadExecutor(new NamedThreadFactory("unloadFailed"));
         Future<Void> future = es.submit(new Callable<Void>() {
             @Override
-            public Void call() throws Exception {
+            public Void call()   {
                 bytes.unlockInt(0);
                 return null;
             }
@@ -996,5 +1008,30 @@ public class ByteBufferBytesTest {
         assertEquals("[pos: 7, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
         bytes.writeByte(8);
         assertEquals("[pos: 8, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎⒏‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
+    }
+
+    enum BuySell {
+        Buy, Sell
+    }
+
+    interface MyMarshallable extends BytesMarshallable {
+        int getNum();
+
+        void setNum(int num);
+
+        double getBig();
+
+        void setBig(double d);
+
+        String getText();
+
+        void setText(@MaxSize(16) String text);
+    }
+
+    static class Dummy implements Serializable {
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof Dummy;
+        }
     }
 }

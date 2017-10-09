@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -32,23 +32,24 @@ import java.util.List;
  * This manages the full life cycle of a file and its mappings.
  */
 public class MappedFile {
-    private final FileChannel fileChannel;
-    private final String basePath;
+    private final String filename;
     private final long blockSize;
     private final long overlapSize;
+
+    private final FileChannel fileChannel;
     private final List<MappedMemory> maps = new ArrayList<MappedMemory>();
     // short list of the last two mappings.
     private volatile MappedMemory map0, map1;
 
-    public MappedFile(String basePath, long blockSize) throws FileNotFoundException {
-        this(basePath, blockSize, 0L);
+    public MappedFile(String filename, long blockSize) throws FileNotFoundException {
+        this(filename, blockSize, 0L);
     }
 
-    private MappedFile(String basePath, long blockSize, long overlapSize) throws FileNotFoundException {
-        this.basePath = basePath;
+    public MappedFile(String filename, long blockSize, long overlapSize) throws FileNotFoundException {
+        this.filename = filename;
         this.blockSize = blockSize;
         this.overlapSize = overlapSize;
-        fileChannel = new RandomAccessFile(basePath, "rw").getChannel();
+        fileChannel = new RandomAccessFile(filename, "rw").getChannel();
     }
 
     public static MappedByteBuffer getMap(@NotNull FileChannel fileChannel, long start, int size) throws IOException {
@@ -66,26 +67,22 @@ public class MappedFile {
                 if (e.getMessage() == null || !e.getMessage().endsWith("user-mapped section open")) {
                     throw e;
                 }
-                if (i < 10)
-                    //noinspection CallToThreadYield
-                    Thread.yield();
-                else
-                    try {
-                        //noinspection BusyWait
-                        Thread.sleep(1);
-                    } catch (InterruptedException ignored) {
-                        Thread.currentThread().interrupt();
-                        throw e;
-                    }
+                try {
+                    //noinspection BusyWait
+                    Thread.sleep(1);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
             }
         }
     }
 
-    public MappedMemory acquire(long index) throws IOException {
-        return acquire(index, false);
+    public String name() {
+        return filename;
     }
 
-    public MappedMemory acquire(long index, boolean prefetch) throws IOException {
+    public MappedMemory acquire(long index) throws IOException {
         MappedMemory map0 = this.map0, map1 = this.map1;
         if (map0 != null && map0.index() == index) {
             map0.reserve();
@@ -95,10 +92,29 @@ public class MappedFile {
             map1.reserve();
             return map1;
         }
-        return acquire0(index, prefetch);
+        return acquire0(index);
     }
 
-    private synchronized MappedMemory acquire0(long index, boolean prefetch) throws IOException {
+    /**
+     * gets the refCount a given index, or returns 0, if the there is no mapping for this index
+     *
+     * @param index
+     * @return the mapping at this {@code index}
+     * @throws IndexOutOfBoundsException if the index is out of range
+     */
+    public int getRefCount(long index) {
+        try {
+            for (MappedMemory m : maps) {
+                if (m.index() == index)
+                    return m.refCount();
+            }
+        } catch (Exception e) {
+            return 0;
+        }
+        return 0;
+    }
+
+    private synchronized MappedMemory acquire0(long index) throws IOException {
         if (map1 != null)
             map1.release();
         map1 = map0;
@@ -131,7 +147,7 @@ public class MappedFile {
             }
         }
         if (count > 1) {
-            LoggerFactory.getLogger(MappedFile.class).info("{} memory mappings left unreleased, num= {}", basePath, count);
+            LoggerFactory.getLogger(MappedFile.class).info("{} memory mappings left unreleased, num= {}", filename, count);
         }
 
         maps.clear();
@@ -143,6 +159,19 @@ public class MappedFile {
             return fileChannel.size();
         } catch (IOException e) {
             return 0;
+        }
+    }
+
+    public long blockSize() {
+        return blockSize;
+    }
+
+    public void release(MappedMemory mappedMemory) {
+        if (mappedMemory.release()) {
+            if (map0 == mappedMemory)
+                map0 = null;
+            if (map1 == mappedMemory)
+                map1 = null;
         }
     }
 }

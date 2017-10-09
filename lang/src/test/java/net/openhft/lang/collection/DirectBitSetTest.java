@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,31 +26,12 @@ import java.util.Arrays;
 import java.util.Collection;
 
 import static net.openhft.lang.collection.DirectBitSet.Bits;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-
+import static org.junit.Assert.*;
 
 @RunWith(value = Parameterized.class)
 public class DirectBitSetTest {
 
-    @Parameterized.Parameters
-    public static Collection<Object[]> data() {
-        int capacityInBytes = 256 / 8;
-        return Arrays.asList(new Object[][]{
-                {
-                        new ATSDirectBitSet(new ByteBufferBytes(
-                                ByteBuffer.allocate(capacityInBytes)))
-                },
-                {
-                        new SingleThreadedDirectBitSet(new ByteBufferBytes(
-                                ByteBuffer.allocate(capacityInBytes)))
-                }
-        });
-    }
-
     private static final int[] INDICES = new int[]{0, 50, 100, 127, 128, 255};
-
     private DirectBitSet bs;
     private boolean singleThreaded;
     private SingleThreadedDirectBitSet st;
@@ -61,6 +42,29 @@ public class DirectBitSetTest {
         if (singleThreaded)
             st = (SingleThreadedDirectBitSet) bs;
         assertTrue(bs.size() >= 256);
+    }
+
+    @Parameterized.Parameters
+    public static Collection<Object[]> data() {
+        int capacityInBytes = 256 / 8;
+        return Arrays.asList(new Object[][]{
+                {
+                        ATSDirectBitSet.wrap(ByteBufferBytes.wrap(
+                                ByteBuffer.allocate(capacityInBytes)))
+                },
+                {
+                        new SingleThreadedDirectBitSet(ByteBufferBytes.wrap(
+                                ByteBuffer.allocate(capacityInBytes)))
+                },
+                {
+                        ATSDirectBitSet.wrap(ByteBufferBytes.wrap(
+                                ByteBuffer.allocateDirect(capacityInBytes)))
+                },
+                {
+                        new SingleThreadedDirectBitSet(ByteBufferBytes.wrap(
+                                ByteBuffer.allocateDirect(capacityInBytes)))
+                }
+        });
     }
 
     private void setIndices() {
@@ -194,7 +198,7 @@ public class DirectBitSetTest {
         long cardinality = bs.cardinality();
         int order = 0;
         for (long i = bs.clearNextSetBit(0L); i >= 0;
-                i = bs.clearNextSetBit(i + 1)) {
+             i = bs.clearNextSetBit(i + 1)) {
             assertEquals(INDICES[order], i);
             assertFalse(bs.get(i));
             order++;
@@ -345,7 +349,7 @@ public class DirectBitSetTest {
         long cardinality = bs.cardinality();
         int order = INDICES.length;
         for (long i = bs.size();
-                (i = bs.clearPreviousNContinuousSetBits(i - 1, 1)) >= 0; ) {
+             (i = bs.clearPreviousNContinuousSetBits(i - 1, 1)) >= 0; ) {
             order--;
             cardinality--;
             assertEquals(INDICES[order], i);
@@ -411,7 +415,7 @@ public class DirectBitSetTest {
         long cardinality = bs.cardinality();
         int order = INDICES.length;
         for (long i = bs.size();
-                (i = bs.setPreviousNContinuousClearBits(i - 1, 1)) >= 0; ) {
+             (i = bs.setPreviousNContinuousClearBits(i - 1, 1)) >= 0; ) {
             order--;
             cardinality++;
             assertEquals(INDICES[order], i);
@@ -603,7 +607,7 @@ public class DirectBitSetTest {
         if (bs instanceof ATSDirectBitSet)
             return;
         long size = bs.size();
-        for (int n : new int[] {3, 7, 13, 31, 33, 63}) {
+        for (int n : new int[]{3, 7, 13, 31, 33, 63, 65, 100, 127, 128, 129, 254, 255}) {
             bs.clear();
             for (int i = 0; i < size / n; i++) {
                 assertRangeIsClear(i * n, i * n + n);
@@ -613,12 +617,12 @@ public class DirectBitSetTest {
             }
         }
         long lastBound = size - (size % 64 == 0 ? 64 : size % 64);
-        for (int n : new int[] {2, 3, 7, 13, 31, 33, 63, 64}) {
+        for (int n : new int[]{2, 3, 7, 13, 31, 33, 63, 64, 65, 100, 127, 128, 129}) {
             bs.setAll();
-            long from = lastBound - (n / 2);
+            long from = n <= 64 ? lastBound - (n / 2) : 30;
             long to = from + n;
             bs.clear(from, to);
-            assertEquals(from, bs.setNextNContinuousClearBits(0L, n));
+            assertEquals("" + n, from, bs.setNextNContinuousClearBits(0L, n));
             assertRangeIsSet(from, to);
 
             bs.clear(from, to);
@@ -675,7 +679,7 @@ public class DirectBitSetTest {
         if (bs instanceof ATSDirectBitSet)
             return;
         long size = bs.size();
-        for (int n : new int[] {3, 7, 13, 31, 33, 63}) {
+        for (int n : new int[]{3, 7, 13, 31, 33, 63}) {
             bs.setAll();
             long cardinality = bs.cardinality();
             for (int i = 0; i < size / n; i++) {
@@ -686,7 +690,7 @@ public class DirectBitSetTest {
             }
         }
         long lastBound = size - (size % 64 == 0 ? 64 : size % 64);
-        for (int n : new int[] {2, 3, 7, 13, 31, 33, 63, 64}) {
+        for (int n : new int[]{2, 3, 7, 13, 31, 33, 63, 64}) {
             bs.clear();
             long from = lastBound - (n / 2);
             long to = from + n;
@@ -747,7 +751,7 @@ public class DirectBitSetTest {
         if (bs instanceof ATSDirectBitSet)
             return;
         long size = bs.size();
-        for (int n : new int[] {3, 7, 13, 31, 33, 63}) {
+        for (int n : new int[]{3, 7, 13, 31, 33, 63}) {
             bs.clear();
             long cardinality = 0;
             for (long from = size - n; from >= 0; from -= n) {
@@ -757,7 +761,7 @@ public class DirectBitSetTest {
                 assertEquals(cardinality += n, bs.cardinality());
             }
         }
-        for (int n : new int[] {2, 3, 7, 13, 31, 33, 63, 64}) {
+        for (int n : new int[]{2, 3, 7, 13, 31, 33, 63, 64}) {
             bs.setAll();
             long from = 64 - (n / 2);
             long to = from + n;
@@ -818,7 +822,7 @@ public class DirectBitSetTest {
         if (bs instanceof ATSDirectBitSet)
             return;
         long size = bs.size();
-        for (int n : new int[] {3, 7, 13, 31, 33, 63}) {
+        for (int n : new int[]{3, 7, 13, 31, 33, 63}) {
             bs.setAll();
             long cardinality = bs.cardinality();
             for (long from = size - n; from >= 0; from -= n) {
@@ -828,7 +832,7 @@ public class DirectBitSetTest {
                 assertEquals(cardinality -= n, bs.cardinality());
             }
         }
-        for (int n : new int[] {2, 3, 7, 13, 31, 33, 63, 64}) {
+        for (int n : new int[]{2, 3, 7, 13, 31, 33, 63, 64}) {
             bs.clear();
             long from = 64 - (n / 2);
             long to = from + n;
@@ -848,7 +852,6 @@ public class DirectBitSetTest {
             assertEquals(cardinality - n, bs.cardinality());
         }
     }
-
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void testIoobeGetNegative() {
@@ -910,7 +913,6 @@ public class DirectBitSetTest {
         bs.getLong((bs.size() + 63) / 64);
     }
 
-
     @Test(expected = IndexOutOfBoundsException.class)
     public void testIoobeNextSetBit() {
         bs.nextSetBit(-1);
@@ -951,7 +953,6 @@ public class DirectBitSetTest {
         bs.previousClearLong(-2);
     }
 
-
     @Test(expected = IndexOutOfBoundsException.class)
     public void testIoobeClearNextSetBit() {
         bs.clearNextSetBit(-1);
@@ -991,7 +992,6 @@ public class DirectBitSetTest {
     public void testIoobeSetPreviousNContinuousClearBit() {
         bs.setPreviousNContinuousClearBits(-2, 2);
     }
-
 
     @Test(expected = IndexOutOfBoundsException.class)
     public void testIoobeSetRangeFromNegative() {
@@ -1037,7 +1037,6 @@ public class DirectBitSetTest {
     public void testIoobeFlipRangeToOverCapacity() {
         bs.flip(0, bs.size() + 1);
     }
-
 
     @Test(expected = IllegalArgumentException.class)
     public void testIaeClearNextNContinuousSetBits() {

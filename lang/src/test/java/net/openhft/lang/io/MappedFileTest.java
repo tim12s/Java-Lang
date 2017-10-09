@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,7 +34,6 @@ public class MappedFileTest {
             br.close();
             throw ioe;
         }
-
     }
 
     public static void delete(File file) throws IOException {
@@ -69,8 +68,9 @@ public class MappedFileTest {
         fill(map1.buffer().force());
         long free1 = dir.getFreeSpace();
 
-        map1.release();
-        map0.release();
+        mfile.release(map1);
+        mfile.release(map0);
+
         mfile.close();
 
 //        printMappings();
@@ -85,8 +85,6 @@ public class MappedFileTest {
             Thread.sleep(500);
         }
         assertTrue("free3-free1: " + (free3 - free1), free3 > free1);
-
-
     }
 
     private void fill(MappedByteBuffer buffer) {

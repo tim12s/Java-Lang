@@ -1,11 +1,11 @@
 /*
- * Copyright 2013 Peter Lawrey
+ * Copyright 2016 higherfrequencytrading.com
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -41,17 +41,17 @@ import static org.junit.Assert.*;
  */
 public class DirectByteBufferBytesTest {
     public static final int SIZE = 128;
-    private ByteBufferBytes bytes;
+    private Bytes bytes;
     private ByteBuffer byteBuffer;
 
     @Before
     public void beforeTest() {
         byteBuffer = ByteBuffer.allocateDirect(SIZE).order(ByteOrder.nativeOrder());
-        bytes = new ByteBufferBytes(byteBuffer);
+        bytes = ByteBufferBytes.wrap(byteBuffer);
     }
 
     @Test
-    public void testLongHash() throws Exception {
+    public void testLongHash()   {
         byte[] bytes = {1, 2, 3, 4, 5, 6, 7, 8};
         long h = NativeBytes.longHash(bytes, 0, bytes.length);
         assertFalse(h == 0);
@@ -62,7 +62,7 @@ public class DirectByteBufferBytesTest {
     }
 
     @Test
-    public void testRead() throws Exception {
+    public void testRead()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.writeByte(i, i);
         bytes.position(0);
@@ -71,11 +71,10 @@ public class DirectByteBufferBytesTest {
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
             assertEquals((byte) i, bytes.readByte(i));
         }
-
     }
 
     @Test
-    public void testReadFully() throws Exception {
+    public void testReadFully()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         bytes.position(0);
@@ -86,16 +85,15 @@ public class DirectByteBufferBytesTest {
     }
 
     @Test
-    public void testCompareAndSetLong() throws Exception {
+    public void testCompareAndSetLong()   {
         assertTrue(bytes.compareAndSwapLong(0, 0, 1));
         assertFalse(bytes.compareAndSwapLong(0, 0, 1));
         assertTrue(bytes.compareAndSwapLong(8, 0, 1));
         assertTrue(bytes.compareAndSwapLong(0, 1, 2));
-
     }
 
     @Test
-    public void testPosition() throws Exception {
+    public void testPosition()   {
         for (int i = 0; i < bytes.capacity(); i++)
             bytes.write(i);
         for (int i = (int) (bytes.capacity() - 1); i >= 0; i--) {
@@ -105,25 +103,19 @@ public class DirectByteBufferBytesTest {
     }
 
     @Test
-    public void testCapacity() throws Exception {
-        assertEquals(SIZE, bytes.capacity());
-        assertEquals(10, new NativeBytes(0, 10).capacity());
-    }
-
-    @Test
-    public void testRemaining() throws Exception {
+    public void testRemaining()   {
         assertEquals(SIZE, bytes.remaining());
         bytes.position(10);
         assertEquals(SIZE - 10, bytes.remaining());
     }
 
     @Test
-    public void testByteOrder() throws Exception {
+    public void testByteOrder()   {
         assertEquals(ByteOrder.nativeOrder(), bytes.byteOrder());
     }
 
     @Test
-    public void testCheckEndOfBuffer() throws Exception {
+    public void testCheckEndOfBuffer()   {
         bytes.checkEndOfBuffer();
 
         try {
@@ -175,7 +167,7 @@ public class DirectByteBufferBytesTest {
         bytes.position(0);
         bytes.append(d, precision).append(' ');
         bytes.position(0);
-        String text = bytes.parseUTF(SPACE_STOP);
+        String text = bytes.parseUtf8(SPACE_STOP);
         bytes.position(0);
         assertEquals(0, bytes.position());
         double d2 = bytes.parseDouble();
@@ -254,17 +246,17 @@ public class DirectByteBufferBytesTest {
         bytes.append('\t');
         bytes.flip();
         for (String word : words) {
-            assertEquals(word, bytes.parseUTF(CONTROL_STOP));
+            assertEquals(word, bytes.parseUtf8(CONTROL_STOP));
         }
-        assertEquals("", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("", bytes.parseUtf8(CONTROL_STOP));
 
         bytes.position(0);
         StringBuilder sb = new StringBuilder();
         for (String word : words) {
-            bytes.parseUTF(sb, CONTROL_STOP);
+            bytes.parseUtf8(sb, CONTROL_STOP);
             assertEquals(word, sb.toString());
         }
-        bytes.parseUTF(sb, CONTROL_STOP);
+        bytes.parseUtf8(sb, CONTROL_STOP);
         assertEquals("", sb.toString());
 
         bytes.position(0);
@@ -286,7 +278,6 @@ public class DirectByteBufferBytesTest {
         bytes.position(10);
         bytes.stepBackAndSkipTo(CONTROL_STOP);
         assertEquals(13, bytes.position());
-
     }
 
     @Test
@@ -563,8 +554,8 @@ public class DirectByteBufferBytesTest {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy/MM/dd'T'HH:mm:ss.SSS");
         sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
         String asStr = sdf.format(new Date(now));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
-        assertEquals(asStr, bytes.parseUTF(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
+        assertEquals(asStr, bytes.parseUtf8(SPACE_STOP));
     }
 
     @Test
@@ -637,7 +628,7 @@ public class DirectByteBufferBytesTest {
     public void testAppendSubstring() {
         bytes.append("Hello World", 2, 7).append("\n");
         bytes.position(0);
-        assertEquals("Hello World".substring(2, 7), bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hello World".substring(2, 7), bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -666,7 +657,7 @@ public class DirectByteBufferBytesTest {
         assertEquals(false, bytes.parseBoolean(SPACE_STOP));
         assertEquals(true, bytes.parseBoolean(SPACE_STOP));
         assertEquals(null, bytes.parseBoolean(SPACE_STOP));
-        assertEquals("word£€", bytes.parseUTF(SPACE_STOP));
+        assertEquals("word£€", bytes.parseUtf8(SPACE_STOP));
         assertEquals(BuySell.Buy, bytes.parseEnum(BuySell.class, SPACE_STOP));
         assertEquals(1234, bytes.parseLong());
         assertEquals(123456L, bytes.parseLong());
@@ -682,7 +673,7 @@ public class DirectByteBufferBytesTest {
         assertEquals(null, bytes.parseBoolean(ALL));
         assertEquals(0L, bytes.parseLong());
         assertEquals(0.0, bytes.parseDouble(), 0.0);
-        assertEquals("", bytes.parseUTF(ALL));
+        assertEquals("", bytes.parseUtf8(ALL));
         assertEquals(null, bytes.parseEnum(StopCharTesters.class, ALL));
 
         bytes.selfTerminating(false);
@@ -699,7 +690,7 @@ public class DirectByteBufferBytesTest {
         } catch (BufferUnderflowException ignored) {
         }
         try {
-            fail("got " + bytes.parseUTF(ALL));
+            fail("got " + bytes.parseUtf8(ALL));
         } catch (BufferUnderflowException ignored) {
         }
         try {
@@ -710,7 +701,6 @@ public class DirectByteBufferBytesTest {
 
     @Test
     public void testAppendParseDouble0() {
-
         bytes.append(1.123456789234, 7).append(' ');
         bytes.append(1.123456789234, 7).append(' ');
         bytes.position(0);
@@ -723,9 +713,7 @@ public class DirectByteBufferBytesTest {
         bytes.append(1.123456789);
         bytes.position(0);
         assertEquals(1.123456789, bytes.parseDouble(), 0);
-
     }
-
 
     @Test
     public void testAppendParseDoubleWithPadding() {
@@ -733,12 +721,10 @@ public class DirectByteBufferBytesTest {
         bytes.append(1.123456789).append(' ');
         bytes.append(123456L);
         bytes.position(0);
-        assertEquals("qwertyuiop", bytes.parseUTF(SPACE_STOP));
+        assertEquals("qwertyuiop", bytes.parseUtf8(SPACE_STOP));
         assertEquals(1.123456789, bytes.parseDouble(), 0);
         assertEquals(123456, bytes.parseLong());
-
     }
-
 
     @Test
     public void testAppendParseDoubleWithPadding2() {
@@ -747,16 +733,13 @@ public class DirectByteBufferBytesTest {
         bytes.position(0);
         assertEquals(1.235, bytes.parseDouble(), 0);
         assertEquals(2.123456789, bytes.parseDouble(), 0);
-
     }
-
 
     @Test
     public void testAppendParseDouble2() {
         bytes.append(1.1234).append(' ');
         bytes.position(0);
         assertEquals(1.1234, bytes.parseDouble(), 0);
-
     }
 
     @Test
@@ -777,7 +760,7 @@ public class DirectByteBufferBytesTest {
         bytes.write("good bye\n".getBytes(), 4, 4);
         bytes.write(4, "0 w".getBytes());
         bytes.position(0);
-        assertEquals("Hell0 worl bye", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("Hell0 worl bye", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -785,7 +768,7 @@ public class DirectByteBufferBytesTest {
         bytes.append(Arrays.asList(1, 2, 3, 4, 5), ";").append(' ');
         bytes.append(new TreeSet<Integer>(Arrays.asList(21, 2, 13, 4, 5)), ";");
         bytes.position(0);
-        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUTF(CONTROL_STOP));
+        assertEquals("1;2;3;4;5 2;4;5;13;21", bytes.parseUtf8(CONTROL_STOP));
     }
 
     @Test
@@ -810,14 +793,14 @@ public class DirectByteBufferBytesTest {
         bytes.position(0);
         bytes.parseDecimal(md2);
         bytes.position(0);
-        String text = bytes.parseUTF(CONTROL_STOP);
+        String text = bytes.parseUtf8(CONTROL_STOP);
         if (!md.equals(md2))
             assertEquals("n: " + n + ", s: " + j + " t: " + text, md, md2);
     }
 
     @Test
     public void testStream() throws IOException {
-        bytes = new ByteBufferBytes(ByteBuffer.allocateDirect(1000));
+        bytes = ByteBufferBytes.wrap(ByteBuffer.allocateDirect(1000));
         GZIPOutputStream out = new GZIPOutputStream(bytes.outputStream());
         out.write("Hello world\n".getBytes());
         out.close();
@@ -882,7 +865,7 @@ public class DirectByteBufferBytesTest {
     public void testWriteSerializable() {
         int capacity = 16 * 1024;
         byteBuffer = ByteBuffer.allocateDirect(capacity);
-        bytes = new ByteBufferBytes(byteBuffer);
+        bytes = ByteBufferBytes.wrap(byteBuffer);
         Calendar cal = Calendar.getInstance();
         bytes.writeObject(cal);
         Dummy d = new Dummy();
@@ -905,17 +888,6 @@ public class DirectByteBufferBytesTest {
             bytes.getAndAdd(4L, 11);
         assertEquals(100, bytes.readInt(0L));
         assertEquals(11 * 11, bytes.readInt(4L));
-    }
-
-    enum BuySell {
-        Buy, Sell
-    }
-
-    static class Dummy implements Serializable {
-        @Override
-        public boolean equals(Object obj) {
-            return obj instanceof Dummy;
-        }
     }
 
     @Test
@@ -992,7 +964,7 @@ public class DirectByteBufferBytesTest {
         ExecutorService es = Executors.newSingleThreadExecutor(new NamedThreadFactory("unloadFailed"));
         Future<Void> future = es.submit(new Callable<Void>() {
             @Override
-            public Void call() throws Exception {
+            public Void call()   {
                 bytes.unlockInt(0);
                 return null;
             }
@@ -1026,5 +998,58 @@ public class DirectByteBufferBytesTest {
         assertEquals("[pos: 7, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
         bytes.writeByte(8);
         assertEquals("[pos: 8, lim: 32, cap: 32 ] ⒈⒉⒊⒋⒌⒍⒎⒏‖٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠٠", bytes.toDebugString());
+    }
+
+    @Test
+    public void testResizeKeepData() {
+        DirectByteBufferBytes buffer = new DirectByteBufferBytes(16);
+        for (int i = 1; buffer.position() < buffer.capacity(); i++) {
+            buffer.writeInt(i);
+        }
+
+        buffer.resize(32, true, true).position(0L);
+        for(int i=1;i <= 8; i++) {
+            if(i <= 4 ) {
+                assertEquals(i, buffer.readInt());
+
+            } else {
+                assertEquals(0, buffer.readInt());
+            }
+        }
+    }
+
+    @Test
+    public void testResizeDeleteData() {
+        DirectByteBufferBytes buffer = new  DirectByteBufferBytes(16);
+        for (int i = 1; buffer.position() < buffer.capacity(); i++) {
+            buffer.writeInt(i);
+        }
+
+        buffer.resize(32, true, false).position(0L);
+
+        for(int i=1;i <= 8; i++) {
+            assertEquals(0, buffer.readInt());
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testResizeExceptionData() {
+        DirectByteBufferBytes buffer = new  DirectByteBufferBytes(16);
+        for (int i = 1; buffer.position() < buffer.capacity(); i++) {
+            buffer.writeInt(i);
+        }
+
+        buffer.resize(4, true, true);
+    }
+
+    enum BuySell {
+        Buy, Sell
+    }
+
+    static class Dummy implements Serializable {
+        @Override
+        public boolean equals(Object obj) {
+            return obj instanceof Dummy;
+        }
     }
 }
